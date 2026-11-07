@@ -17,11 +17,13 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     from .routes.sessions import bp as sessions_bp
     from .routes.lessons import bp as lessons_bp
     from .routes.marking import bp as marking_bp
+    from .routes.student import bp as student_bp
 
     app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(sessions_bp, url_prefix="/api")
     app.register_blueprint(lessons_bp, url_prefix="/api")
     app.register_blueprint(marking_bp, url_prefix="/api")
+    app.register_blueprint(student_bp, url_prefix="/api")
 
     @app.errorhandler(413)
     def too_large(_err):

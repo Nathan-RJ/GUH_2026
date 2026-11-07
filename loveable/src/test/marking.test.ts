@@ -61,9 +61,17 @@ describe("live marking in a lesson session", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   const flush = () => new Promise((r) => setTimeout(r, 0));
+  const isStudent = (url: unknown) => String(url).includes("/api/student/");
+  const studentReply = () => new Response(JSON.stringify({ reply: "Tell me more?", learned: [], status: "ok" }));
+  /** fetch that answers the AI student itself and passes marking calls to `mark`. */
+  const routed = (mark: (n: number) => Promise<Response>) => {
+    let n = 0;
+    return vi.fn(async (url: unknown) => (isStudent(url) ? studentReply() : mark(++n)));
+  };
+  const markCalls = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter(([url]) => !isStudent(url));
 
   it("sends the whole transcript after each message and recolours the cards", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = routed(async () =>
       new Response(JSON.stringify(result(50, [criterion("adjacent_comparisons", "full", 1), criterion("conditional_swaps", "partial", 1)]))),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -75,8 +83,8 @@ describe("live marking in a lesson session", () => {
     await s.sendMessage("Swap them if the left is bigger.");
     await flush();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(markCalls(fetchMock)).toHaveLength(2);
+    const [url, init] = markCalls(fetchMock)[1] as unknown as [string, RequestInit];
     expect(url).toMatch(/\/api\/mark$/);
     const body = JSON.parse(init.body as string);
     expect(body.lesson_id).toBe("b0454456-7c09-4401-a544-373e3bbc2f10");
@@ -97,10 +105,11 @@ describe("live marking in a lesson session", () => {
 
   it("ignores an older result that arrives after a newer one", async () => {
     let releaseFirst: (r: Response) => void = () => {};
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => new Promise<Response>((r) => (releaseFirst = r)))
-      .mockImplementationOnce(async () => new Response(JSON.stringify(result(100, [criterion("adjacent_comparisons", "full", 1)]))));
+    const fetchMock = routed((n) =>
+      n === 1
+        ? new Promise<Response>((r) => (releaseFirst = r))
+        : Promise.resolve(new Response(JSON.stringify(result(100, [criterion("adjacent_comparisons", "full", 1)])))),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const s = service.startSession(topic("bubble-sort"));
@@ -118,7 +127,7 @@ describe("live marking in a lesson session", () => {
   });
 
   it("reports a failure without breaking the session", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "n8n is down" }), { status: 502 })));
+    vi.stubGlobal("fetch", routed(async () => new Response(JSON.stringify({ error: "n8n is down" }), { status: 502 })));
     const s = service.startSession(topic("bubble-sort"));
     const events: SessionEvent[] = [];
     s.subscribe((e) => events.push(e));
@@ -129,7 +138,7 @@ describe("live marking in a lesson session", () => {
     s.close();
   });
 
-  it("does not call the marker for demo topics", async () => {
+  it("does not call the marker or the AI student for demo topics", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const s = service.startSession(topic("recursion"));

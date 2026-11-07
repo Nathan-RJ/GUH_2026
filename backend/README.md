@@ -21,6 +21,7 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 | POST | `/api/sessions/<id>/messages` | `{"text": "..."}` (the user's explanation) -> updated session with the student's reply |
 | GET  | `/api/sessions/<id>/attachments/<name>` | download an uploaded file |
 | POST | `/api/mark` | `{"lesson_id", "transcript": [{"speaker", "text"}]}` -> forwards to the n8n Mark Session workflow; returns `{session_id, score, feedback: {criteria: [...]}}`. Saves a session row in Supabase every call. |
+| POST | `/api/student/reply` | the AI student for the app's lessons: `{lesson_id, topic, summary, objectives, transcript, message, learned}` -> `{reply, learned, status, brief}`. Stateless; uses the lesson's hidden `agent_brief` from `AGENT_BRIEF_URL` when set, else a brief from the public lesson info. Omit `message` for the opening line. |
 
 ## Files
 

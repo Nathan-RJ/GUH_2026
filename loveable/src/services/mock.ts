@@ -25,6 +25,9 @@ import type {
   TeachingSession,
 } from "./types";
 import { applyMarking, markTranscript, type MarkingResult, type TranscriptEntry } from "./marking";
+import { askStudent } from "./student";
+
+const STUDENT_FAILED_REPLY = "Sorry, I lost my train of thought. Could you say that again?";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let idCounter = 0;
@@ -138,15 +141,43 @@ class MockSession implements TeachingSession {
   private pendingMark: Promise<void> = Promise.resolve();
 
   private topicId: string;
+  // Real lessons: replies come from the AI student (backend), which is stateless,
+  // so we keep what it has learned and send it back each turn.
+  private learned: string[] = [];
 
   constructor(private topic: Topic) {
     this.topicId = topic.id;
     this.lessonId = topic.lessonId;
     this.concepts = topic.concepts.map((c) => ({ ...c, state: "not_covered" as ConceptState }));
     setTimeout(() => {
+      if (this.closed) return; // left the page before it started
       this.emit({ type: "graph_update", concepts: this.concepts });
-      this.reply(`Hi! I've got an exam on ${topic.title.toLowerCase()} soon and I'm really lost. Could you teach me from the start?`);
+      if (this.lessonId) void this.studentOpening();
+      else this.reply(`Hi! I've got an exam on ${topic.title.toLowerCase()} soon and I'm really lost. Could you teach me from the start?`);
     }, 400);
+  }
+
+  private async studentOpening() {
+    try {
+      const r = await askStudent(this.topic, [], []);
+      this.reply(r.reply);
+    } catch (err) {
+      console.error("AI student unavailable:", err);
+      this.reply(`Hi! I'm new to ${this.topic.title.toLowerCase()}. Could you teach me from the start?`);
+    }
+  }
+
+  /** The AI student's reply to the user's latest message (real lessons only). */
+  private async studentReply(message: string) {
+    try {
+      // The transcript already ends with this message; the backend sends it to the student once.
+      const r = await askStudent(this.topic, this.transcript.map((t) => ({ ...t })), this.learned, message);
+      this.learned.push(...r.learned);
+      this.reply(r.reply);
+    } catch (err) {
+      console.error("AI student unavailable:", err);
+      this.reply(STUDENT_FAILED_REPLY);
+    }
   }
 
   subscribe(cb: (e: SessionEvent) => void) {
@@ -209,12 +240,19 @@ class MockSession implements TeachingSession {
     this.transcript.push({ speaker: "user", text: trimmed });
     this.markLive();
     const lower = trimmed.toLowerCase();
-    await wait(700);
+    if (!this.lessonId) await wait(700); // the scripted demo pupil "thinks"; the AI student takes its own time
 
     // Guardrail: attempts to award marks.
     if (/(give|award)\s+(yourself|sam|you|itself)?.*(marks?|points|100|full score|top grade)|you (get|score) (full|100)/i.test(lower)) {
       this.emit({ type: "guardrail_block", message: "Nice try, your student can't give itself marks" });
       this.reply("Ha, I wish! But I only get marks if I actually understand it. Can you explain it to me instead?");
+      return;
+    }
+
+    // Real lessons: the AI student answers what was actually said. The scripted
+    // replies below are only for the demo topics.
+    if (this.lessonId) {
+      await this.studentReply(trimmed);
       return;
     }
 
