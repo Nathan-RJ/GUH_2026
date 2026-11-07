@@ -22,6 +22,7 @@ import type {
   StudentOverview,
   TopicRecord,
   TeachingSession,
+  Topic,
 } from "./types";
 import { applyMarking, markTranscript, type MarkingResult, type TranscriptEntry } from "./marking";
 
@@ -136,8 +137,8 @@ class MockSession implements TeachingSession {
   private lastMark: MarkingResult | null = null;
   private pendingMark: Promise<void> = Promise.resolve();
 
-  constructor(private topicId: string) {
-    const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
+  constructor(private topicId: string, private topic: Topic = DEMO_MODULE.topics.find((t) => t.id === topicId)!) {
+    if (!topic) throw new Error("Lesson not loaded. Return to the lesson list and try again.");
     this.lessonId = topic.lessonId;
     this.concepts = topic.concepts.map((c) => ({ ...c, state: "not_covered" as ConceptState }));
     setTimeout(() => {
@@ -173,6 +174,14 @@ class MockSession implements TeachingSession {
         if (seq < this.appliedSeq) return; // an answer to a newer transcript is already shown
         this.appliedSeq = seq;
         this.lastMark = result;
+        // Public learning objectives are not rubric IDs. Use the criteria returned
+        // by live marking so newly uploaded lessons get the correct concept map.
+        const criteria = result.feedback?.criteria ?? [];
+        if (criteria.length) {
+          const existing = this.concepts.filter(c => !c.id.startsWith("objective-"));
+          const known = new Set(existing.map(c => c.id));
+          this.concepts = [...existing, ...criteria.filter(c => !known.has(c.criterion_id)).map(c => ({ id: c.criterion_id, label: c.title, state: "not_covered" as ConceptState }))];
+        }
         this.concepts = applyMarking(this.concepts, result);
         this.emit({ type: "graph_update", concepts: this.concepts.map((c) => ({ ...c })) });
         this.emit({ type: "marking", status: "done", score: result.score });
@@ -241,7 +250,7 @@ class MockSession implements TeachingSession {
       this.emit({ type: "guardrail_block", message: "That statement doesn't match your module content" });
       this.setMode("stubborn");
       if (this.wrongCount >= 3) {
-        const topic = DEMO_MODULE.topics.find((t) => t.id === this.topicId)!;
+        const topic = this.topic;
         const esc: Escalation = {
           id: nextId("esc"),
           student: "You (demo student)",
@@ -334,6 +343,9 @@ class MockSession implements TeachingSession {
 }
 
 export const mockService: Reply2MeService = {
+  async getStudentModule() {
+    return DEMO_MODULE;
+  },
   async getModule() {
     return DEMO_MODULE;
   },
@@ -374,3 +386,7 @@ export const mockService: Reply2MeService = {
     return state.lastResult;
   },
 };
+
+export function createLessonSession(topic: Topic): TeachingSession {
+  return new MockSession(topic.id, topic);
+}

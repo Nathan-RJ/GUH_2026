@@ -22,10 +22,10 @@ export const Route = createFileRoute("/student/")({
 });
 
 function StudentHome() {
-  const { data: module } = useQuery({ queryKey: ["module"], queryFn: () => service.getModule() });
+  const { data: module, isPending, error, refetch, isFetching } = useQuery({ queryKey: ["student-lessons"], queryFn: () => service.getStudentModule(), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 });
   const { data: mine } = useQuery({ queryKey: ["mine"], queryFn: () => service.getMyProgress() });
 
-  const records = mine ? Object.values(mine) : [];
+  const records = (module?.topics ?? []).map((topic) => mine?.[topic.id] ?? { state: "not_covered", score: null, attempts: 0, concepts: Object.fromEntries(topic.concepts.map(c => [c.id, "not_covered"])) });
   const scored = records.filter((r) => r.score !== null);
   const avg = scored.length ? Math.round(scored.reduce((a, r) => a + (r.score ?? 0), 0) / scored.length) : 0;
   const allConcepts = records.flatMap((r) => Object.values(r.concepts));
@@ -46,8 +46,9 @@ function StudentHome() {
 
       <div className="mb-7 mt-16 flex flex-wrap items-end justify-between gap-5">
         <h2 className="text-3xl font-medium md:text-4xl">Choose a topic to teach</h2>
-        <StateLegend />
+        <div className="flex items-center gap-4"><button type="button" onClick={() => void refetch()} disabled={isFetching} className="text-sm underline">{isFetching ? "Refreshing…" : "Refresh lessons"}</button><StateLegend /></div>
       </div>
+      <div aria-live="polite">{isPending && <p>Loading lessons…</p>}{error && <p role="alert" className="mb-5 text-destructive">Could not refresh lessons: {error.message}</p>}{!isPending && !error && module?.topics.length === 0 && <p>No lessons yet. Ask your teacher to upload module content.</p>}</div>
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {module?.topics.map((t, i) => {
           const rec = mine?.[t.id];

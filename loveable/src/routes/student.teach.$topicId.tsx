@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Mic, MicOff, Volume2, VolumeX, Flag, Keyboard, Send } from "lucide-react";
-import { DEMO_MODULE } from "@/services/demo-data";
-import { service, type Concept, type SamMode, type TeachingSession } from "@/services";
+import { useQuery } from "@tanstack/react-query";
+import { service, type Concept, type SamMode, type TeachingSession, type Topic } from "@/services";
 import { ConceptMap } from "@/components/ConceptMap";
 import { StateLegend } from "@/components/StateLegend";
 import { StudentBlob, type BlobMood, type BlobSpeaker } from "@/components/student-blob";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/student/teach/$topicId")({
   head: ({ params }) => {
-    const t = DEMO_MODULE.topics.find((x) => x.id === params.topicId)?.title ?? "a topic";
+    const t = "your lesson";
     return {
       meta: [
         { title: `Teach ${t} — Reply 2 Me` },
@@ -38,8 +38,17 @@ const MODE_META: Record<SamMode, { label: string; dot: string }> = {
 
 function TeachPage() {
   const { topicId } = Route.useParams();
+  const { data, isPending, error, refetch } = useQuery({ queryKey: ["student-lessons"], queryFn: () => service.getStudentModule(), retry: 1 });
+  if (isPending) return <main className="p-10">Loading lesson…</main>;
+  if (error) return <main className="p-10"><p role="alert">{error.message}</p><Button onClick={() => void refetch()}>Try again</Button></main>;
+  const topic = data?.topics.find(t => t.id === topicId);
+  if (!topic) return <main className="p-10">This lesson is no longer available. Return to the student lesson list.</main>;
+  return <TeachSession key={topic.id} topic={topic} />;
+}
+
+function TeachSession({ topic }: { topic: Topic }) {
+  const { topicId } = Route.useParams();
   const navigate = useNavigate();
-  const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
   const [concepts, setConcepts] = useState<Concept[]>(topic.concepts.map((c) => ({ ...c, state: "not_covered" })));
   const [mode, setMode] = useState<SamMode>("curious");
   const [muted, setMuted] = useState(false);

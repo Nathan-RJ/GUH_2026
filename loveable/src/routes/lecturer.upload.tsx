@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BookOpen, FileText, Loader2, Lock, ScrollText, UploadCloud } from "lucide-react";
 import { service, type DocKind, type DocumentResult } from "@/services";
 import { DOCUMENT_ACCEPT, validateDocument } from "@/services/upload";
@@ -20,6 +21,7 @@ const ZONES = [
 type Item = { id: string; name: string; state: "uploading" | "processing" | "draft" | "unconfirmed" | "error"; message?: string; result?: DocumentResult };
 
 export function UploadPage() {
+  const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export function UploadPage() {
     try {
       const result = await service.processDocument(doc, () => update({ state: "processing" }));
       update({ state: result.status, result });
+      if (result.status === "draft") void queryClient.invalidateQueries({ queryKey: ["student-lessons"] });
       setFile(null);
       setTitle("");
     } catch (cause) {
@@ -61,7 +64,7 @@ export function UploadPage() {
       <div className="mb-8 border-b pb-10">
         <p className="label-text text-muted-foreground">Teacher</p>
         <h1 className="mt-4 text-4xl font-medium md:text-6xl">Upload module content</h1>
-        <p className="mt-5 text-muted-foreground">Upload one PDF, TXT or MD document, up to 10 MB. A generated lesson is saved as a draft for review.</p>
+        <p className="mt-5 text-muted-foreground">Upload one PDF, TXT or MD document, up to 10 MB. Your document will be turned into a lesson.</p>
       </div>
       <div className="mb-8 flex items-center gap-4 rounded-2xl bg-ink px-5 py-4 text-ink-foreground">
         <Lock className="h-5 w-5 shrink-0" />
@@ -81,7 +84,7 @@ export function UploadPage() {
         {items.map((item) => <div key={item.id} className="surface-panel p-6">
           <h2 className="break-all font-medium">{item.name}</h2>
           {(item.state === "uploading" || item.state === "processing") && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{item.state === "uploading" ? "Uploading document…" : "Document sent. Waiting for n8n to generate and save the lesson…"}</p>}
-          {item.result?.status === "draft" && <><p className="mt-2 text-state-correct">Lesson saved as a draft. Review it before using it with students.</p><p className="mt-2 break-all text-sm">Lesson ID: {item.result.lesson_id}</p><p className="mt-2 text-sm text-muted-foreground">The workflow returns a receipt, not extracted topics. The existing dashboard still uses demo data.</p></>}
+          {item.result?.status === "draft" && <><p className="mt-2 text-state-correct">Lesson uploaded successfully.</p><p className="mt-2 break-all text-sm">Lesson ID: {item.result.lesson_id}</p><p className="mt-2 text-sm text-muted-foreground">Open the student page to find your lesson.</p></>}
           {item.result?.status === "unconfirmed" && <p className="mt-2">Completion unconfirmed: {item.result.message}</p>}
           {item.state === "error" && <p role="alert" className="mt-2 text-destructive">{item.message}</p>}
         </div>)}

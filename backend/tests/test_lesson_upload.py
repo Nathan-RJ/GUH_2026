@@ -100,6 +100,31 @@ class LessonUploadTests(unittest.TestCase):
             self.assertEqual(parts[1].get_payload(decode=True), content)
             self.assertEqual(req.full_url, lessons.WEBHOOK)
 
+    def test_catalogue_strips_private_fields_and_failed_lessons(self):
+        with patch.object(lessons, "urlopen") as transport:
+            transport.return_value.__enter__.return_value.read.return_value = json.dumps({"lessons": [
+                {"lesson_id": "new", "title": "New lesson", "status": "draft", "rubric": "secret", "source_text": "secret", "student_brief": {"summary": "Summary", "key_points": ["secret"], "learning_objectives": ["Explain", 123]}},
+                {"lesson_id": "bad", "status": "failed"},
+            ]}).encode()
+            response = self.client.get("/api/lessons")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(len(response.json["lessons"]), 1)
+            self.assertNotIn("secret", response.get_data(as_text=True))
+            self.assertEqual(response.json["lessons"][0]["student_brief"]["learning_objectives"], ["Explain"])
+            self.assertEqual(transport.call_args.args[0].full_url, lessons.GET_LESSON_URL + "all")
+
+    def test_catalogue_empty_and_malformed(self):
+        with patch.object(lessons, "urlopen") as transport:
+            transport.return_value.__enter__.return_value.read.return_value = b'{"lessons":[]}'
+            self.assertEqual(self.client.get("/api/lessons").json, {"lessons": []})
+            transport.return_value.__enter__.return_value.read.return_value = b'{"message":"Workflow started"}'
+            self.assertEqual(self.client.get("/api/lessons").status_code, 502)
+
+    def test_catalogue_network_failure(self):
+        with patch.object(lessons, "urlopen", side_effect=URLError("DNS")):
+            self.assertEqual(self.client.get("/api/lessons").status_code, 502)
+
 
 if __name__ == "__main__":
     unittest.main()

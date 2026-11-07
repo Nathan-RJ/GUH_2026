@@ -11,6 +11,50 @@ from flask import Blueprint, jsonify, request
 bp = Blueprint("lessons", __name__)
 WEBHOOK = "https://likeclockwork.app.n8n.cloud/webhook/reply2me/prepare-lesson"
 MAX_FILE_BYTES = 10 * 1024 * 1024
+GET_LESSON_URL = "https://likeclockwork.app.n8n.cloud/webhook/70126bb4-d705-4478-ac1f-16c05b931594/reply2me/lesson/"
+
+
+@bp.get("/lessons")
+def list_lessons():
+    """Read the live catalogue; expose only the workflow's public lesson fields."""
+    try:
+        upstream = Request(GET_LESSON_URL + "all", headers={"Accept": "application/json"})
+        with urlopen(upstream, timeout=30) as response:
+            raw = response.read(5 * 1024 * 1024 + 1)
+        if len(raw) > 5 * 1024 * 1024:
+            raise ValueError("Catalogue too large")
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or not isinstance(payload.get("lessons"), list):
+            raise ValueError("Invalid catalogue")
+        lessons = []
+        for row in payload["lessons"]:
+            if not isinstance(row, dict) or not isinstance(row.get("lesson_id"), str):
+                raise ValueError("Invalid lesson")
+            if row.get("status") == "failed":
+                continue
+            brief = row.get("student_brief")
+            if not isinstance(brief, dict):
+                raise ValueError("Invalid student brief")
+            objectives = brief.get("learning_objectives", [])
+            lessons.append({
+                "lesson_id": row["lesson_id"],
+                "title": row.get("title") if isinstance(row.get("title"), str) else "Untitled lesson",
+                "student_brief": {
+                    key: brief.get(key) if isinstance(brief.get(key), str) else ""
+                    for key in ("topic", "summary", "task_instructions")
+                } | {"learning_objectives": [value for value in objectives if isinstance(value, str)] if isinstance(objectives, list) else []},
+            })
+        result = jsonify(lessons=lessons)
+        result.headers["Cache-Control"] = "no-store"
+        return result
+    except HTTPError as error:
+        return jsonify(error=f"Get Lesson workflow returned HTTP {error.code}. Check that its catalogue version is published."), 502
+    except (TimeoutError, socket.timeout):
+        return jsonify(error="Loading lessons timed out. Please try again."), 504
+    except (URLError, OSError):
+        return jsonify(error="Cannot reach the lesson service. Check backend connectivity."), 502
+    except (ValueError, UnicodeDecodeError):
+        return jsonify(error="Get Lesson returned an invalid catalogue. Expected a lessons array."), 502
 
 
 def forward_document(content: bytes, extension: str, title: str):

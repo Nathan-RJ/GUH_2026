@@ -109,6 +109,7 @@ export interface StudentOverview {
 
 export interface Reply2MeService {
   getModule(): Promise<Module>;
+  getStudentModule(): Promise<Module>;
   processDocument(doc: DocumentUpload, onUploaded?: () => void): Promise<DocumentResult>;
   /** The signed-in student's own progress only. */
   getMyProgress(): Promise<Record<string, TopicRecord>>;
