@@ -9,7 +9,7 @@ import { StateLegend } from "@/components/StateLegend";
 import { StudentBlob, type BlobMood, type BlobSpeaker } from "@/components/student-blob";
 import { Eyebrow } from "@/components/Eyebrow";
 import { Button } from "@/components/ui/button";
-import { useStudentVoice } from "@/voice";
+import { blobColours, randomStudent, useStudentVoice, type StudentType } from "@/voice";
 import { cn } from "@/lib/utils";
 import { STATE_META } from "@/lib/states";
 
@@ -62,7 +62,11 @@ function TeachPage() {
     setDraft("");
   };
   // ElevenLabs voice (falls back to the browser's voice): see src/voice/
-  const voice = useStudentVoice({ onFinal: send, onError: (msg) => toast.error(msg) });
+  // A random student each session: its own personality, voice and colour (src/voice/students.ts).
+  // Picked after mount so the server-rendered page and the browser agree.
+  const [student, setStudent] = useState<StudentType | null>(null);
+  useEffect(() => setStudent(randomStudent()), [topicId]);
+  const voice = useStudentVoice({ onFinal: send, onError: (msg) => toast.error(msg), voice: student?.voice });
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
 
@@ -165,8 +169,18 @@ function TeachPage() {
             <span className="text-right text-xs text-ink-foreground/50">{speaker === "you" ? (mic.wrappingUp ? "Paused — finishing your turn…" : "You're talking") : speaker === "ai" ? "Your student is talking" : speaker === "thinking" ? "Thinking…" : "Tap the mic and start teaching"}</span>
           </div>
 
+          {student && (
+            <div className="animate-rise mt-5 flex flex-col items-center gap-1.5 text-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-ink-foreground/15 px-3.5 py-1.5 text-xs font-semibold">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: blobColours(student).main }} />
+                Today's student: {student.label}
+              </span>
+              <span className="text-xs text-ink-foreground/50">{student.blurb}</span>
+            </div>
+          )}
+
           <div className="flex flex-1 items-center justify-center">
-            <StudentBlob level={level} speaker={speaker} mood={mood} />
+            <StudentBlob level={level} speaker={speaker} mood={mood} colours={student ? blobColours(student) : undefined} />
           </div>
 
           <div className="mb-7 min-h-[104px] w-full max-w-xl text-center">

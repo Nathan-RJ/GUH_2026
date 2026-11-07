@@ -1,1 +1,1 @@
-export { StudentBlob, type BlobMood, type BlobSpeaker } from "./StudentBlob";
+export { StudentBlob, type BlobColours, type BlobMood, type BlobSpeaker } from "./StudentBlob";

@@ -37,12 +37,12 @@ export async function transcribe(audio: Blob): Promise<string> {
   return (data.text ?? "").trim();
 }
 
-/** Text -> MP3 audio. */
-export async function synthesize(text: string): Promise<Blob> {
+/** Text -> MP3 audio, in one of the backend's voices (default if omitted). */
+export async function synthesize(text: string, voice?: string): Promise<Blob> {
   const res = await fetch(`${BASE}/api/voice/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(voice ? { text, voice } : { text }),
   });
   if (!res.ok) throw await errorFrom(res);
   return res.blob();

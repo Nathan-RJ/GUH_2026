@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 
-from ..agents import knowledge, lesson, student
+from ..agents import knowledge, lesson, personalities, student
 from ..services import store, student_inputs
 from ..services.files import save_attachments
 
@@ -22,6 +22,8 @@ def create_session():
       files    any number of attachments
       plus the optional student inputs documented in services/student_inputs.py
       (lesson, prerequisites, known_content), which set up the student.
+      personality  optional: eager | sceptic | dreamer | knowitall | shy
+                   (default: random; see agents/personalities.py)
     """
     prompt = (request.form.get("prompt") or "").strip()
     files = [f for f in request.files.getlist("files") if f and f.filename]
@@ -35,10 +37,17 @@ def create_session():
         brief.topic = prompt
     if not prompt and not files and not inputs.lesson:
         return jsonify(error="Add a prompt, a lesson or at least one attachment."), 400
+    try:
+        personality = personalities.choose(request.form.get("personality"))
+    except ValueError:
+        return jsonify(error=f"personality must be one of: {', '.join(personalities.PERSONALITIES)}."), 400
+    if not brief.persona:  # a lesson can set its own; otherwise the random student's personality
+        brief.persona = personalities.PERSONALITIES[personality]["prompt"]
 
     session_id = store.new_id()
     attachments = save_attachments(files, _session_folder(session_id))
     session = store.create_session(session_id, prompt, attachments)
+    session["personality"] = personality  # sent to the page too, so it can match voice + colour
     bank = knowledge.build(
         agent_brief=brief, prerequisites=inputs.prerequisites, known_content=inputs.known_content
     )

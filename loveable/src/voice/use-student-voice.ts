@@ -21,9 +21,13 @@ interface Options {
   onFinal: (text: string) => void;
   /** Called with a readable message when something goes wrong. */
   onError?: (message: string) => void;
+  /** ElevenLabs voice name for the student (see backend VOICES). */
+  voice?: string | undefined;
 }
 
-export function useStudentVoice({ onFinal, onError }: Options) {
+export function useStudentVoice({ onFinal, onError, voice }: Options) {
+  const voiceNameRef = useRef(voice);
+  voiceNameRef.current = voice;
   const [engine, setEngine] = useState<VoiceEngine>("checking");
   const engineRef = useRef(engine);
   engineRef.current = engine;
@@ -87,7 +91,7 @@ export function useStudentVoice({ onFinal, onError }: Options) {
 
       if (engineRef.current !== "elevenlabs") return speakWithBrowser();
 
-      audioUrlFor(text)
+      audioUrlFor(text, voiceNameRef.current)
         .then((url) => {
           if (token !== tokenRef.current) return;
           const playback = playWithLevel(

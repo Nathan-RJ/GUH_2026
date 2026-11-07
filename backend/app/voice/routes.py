@@ -20,25 +20,31 @@ def _not_configured():
 
 @bp.get("/status")
 def status():
-    return jsonify(enabled=bool(settings.api_key()))
+    return jsonify(enabled=bool(settings.api_key()), voices=list(settings.VOICES))
 
 
 @bp.post("/speak")
 def speak():
-    """Body: {"text": "..."} -> MP3 audio."""
+    """Body: {"text": "...", "voice": "gigi"} -> MP3 audio.
+    `voice` is optional and must be a name from settings.VOICES."""
     key = settings.api_key()
     if not key:
         return _not_configured()
 
-    text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
     if not text:
         return jsonify(error="Nothing to read out."), 400
     if len(text) > MAX_SPEAK_CHARS:
         return jsonify(error=f"Text is too long to read out (max {MAX_SPEAK_CHARS} characters)."), 400
 
+    voice_id = settings.voice_id(body.get("voice") or None)
+    if voice_id is None:
+        return jsonify(error=f"Unknown voice. Choose one of: {', '.join(settings.VOICES)}."), 400
+
     try:
         audio = elevenlabs.text_to_speech(
-            text, api_key=key, voice_id=settings.voice_id(), model_id=settings.tts_model()
+            text, api_key=key, voice_id=voice_id, model_id=settings.tts_model()
         )
     except elevenlabs.ElevenLabsError as err:
         return jsonify(error=str(err)), 502
