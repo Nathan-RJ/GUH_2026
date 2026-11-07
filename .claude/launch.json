@@ -18,6 +18,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "loveable", "run", "dev"],
       "port": 8080
+    },
+    {
+      "name": "backend-linux",
+      "runtimeExecutable": "backend/.venv/bin/python",
+      "runtimeArgs": ["backend/run.py"],
+      "port": 5000
+    },
+    {
+      "name": "lovable-nvm",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", ". \"$HOME/.nvm/nvm.sh\" && nvm use 22 >/dev/null && npm --prefix loveable run dev"],
+      "port": 8080
     }
   ]
 }
