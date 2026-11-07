@@ -24,4 +24,9 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
         return jsonify(error=f"Upload too large (max {limit_mb} MB in total)."), 413
 
+    # Voice: ElevenLabs speech in/out (all code in app/voice/)
+    from .voice import bp as voice_bp
+
+    app.register_blueprint(voice_bp, url_prefix="/api/voice")
+
     return app
