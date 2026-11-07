@@ -10,18 +10,25 @@ A session looks like:
   "attachments": [{"name", "original_name", "size", "content_type"}],
   "messages": [{"role": "user" | "assistant", "text", "created_at"}],
   "turns": [StudentTurn.to_dict(), ...],   # backend only, see agents/student.py
+  "misconception_count": 3,                # backend only: the difficulty knob
+  "misconception_bank": [{"id", "text"}],  # backend only: all possible misconceptions
+  "student_misconceptions": [...],         # backend only: the ones the student was given
   "created_at": "ISO timestamp"
 }
 
 "messages" is what the webpage shows. "turns" is one record per explanation
 (the explanation, the student's reply and its status) for the teacher agent to
-consume; it's left out of API responses by public_view().
+consume. The misconception fields say what the student was set up to get
+wrong. All backend-only fields are left out of API responses by public_view().
 """
 
 import uuid
 from datetime import datetime, timezone
 
 _sessions: dict[str, dict] = {}
+
+# Never sent to the webpage (the student must not reveal its misconceptions).
+BACKEND_ONLY = {"turns", "misconception_count", "misconception_bank", "student_misconceptions"}
 
 
 def _now() -> str:
@@ -39,6 +46,9 @@ def create_session(session_id: str, prompt: str, attachments: list[dict]) -> dic
         "attachments": attachments,
         "messages": [],
         "turns": [],
+        "misconception_count": 0,
+        "misconception_bank": [],
+        "student_misconceptions": [],
         "created_at": _now(),
     }
     _sessions[session_id] = session
@@ -55,6 +65,13 @@ def add_message(session_id: str, role: str, text: str) -> dict:
     return message
 
 
+def set_misconceptions(session_id: str, *, count: int, bank: list[dict], chosen: list[dict]) -> None:
+    session = _sessions[session_id]
+    session["misconception_count"] = count
+    session["misconception_bank"] = bank
+    session["student_misconceptions"] = chosen
+
+
 def add_turn(session_id: str, turn: dict) -> dict:
     _sessions[session_id]["turns"].append(turn)
     return turn
@@ -67,4 +84,4 @@ def get_turns(session_id: str) -> list[dict]:
 
 def public_view(session_id: str) -> dict:
     """The session as the webpage sees it (backend-only fields removed)."""
-    return {k: v for k, v in _sessions[session_id].items() if k != "turns"}
+    return {k: v for k, v in _sessions[session_id].items() if k not in BACKEND_ONLY}

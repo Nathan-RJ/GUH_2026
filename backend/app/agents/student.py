@@ -3,16 +3,34 @@
 It only knows what the user tells it, asks naive follow-up questions, and
 holds onto its misconceptions until they are properly explained away.
 
-    opening(session)              -> str          first message when a session starts
-    respond(session, explanation) -> StudentTurn  reply to the user's explanation
+    choose_misconceptions(bank, count) -> list[dict]   pick the student's misconceptions
+    opening(session)                   -> str          first message when a session starts
+    respond(session, explanation)      -> StudentTurn  reply to the user's explanation
 
-Neither function saves anything: the caller (routes/sessions.py) stores the
-messages and the turn. `session["messages"]` is the history *before* this turn.
+None of these save anything: the caller (routes/sessions.py) stores the
+results. `session["messages"]` is the history *before* this turn.
+
+Misconceptions
+--------------
+Misconceptions are generated elsewhere (not built yet) and arrive as a
+"bank" for the session. `choose_misconceptions` picks `count` of them at
+random; that count is the difficulty knob (0 = the student is simply new to
+the topic, more = harder to teach). The chosen ones are stored in
+session["student_misconceptions"] and the student plays exactly those.
+
+We don't know the bank's final format yet, so `normalize_misconceptions`
+accepts plain strings or dicts and turns them into {"id", "text", ...}.
+Adapt that one function when the real format is known.
+
+If a session has no bank yet, the student invents `count` plausible
+misconceptions itself, so the difficulty knob still works.
 
 A StudentTurn is the hand-off for the (future) teacher agent: everything it
-needs to review one turn, alongside the session's topic, material and history.
+needs to review one turn, alongside the session's topic, material, chosen
+misconceptions and history.
 """
 
+import random
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
@@ -21,6 +39,9 @@ from . import llm
 
 # ok: a real AI reply | placeholder: AI not configured | failed: the AI request errored
 TurnStatus = Literal["ok", "placeholder", "failed"]
+
+# Keys we'll accept as a misconception's text until the real format is decided.
+_TEXT_KEYS = ("text", "belief", "misconception", "description", "statement", "name")
 
 
 @dataclass
@@ -35,6 +56,58 @@ class StudentTurn:
     def to_dict(self) -> dict:
         return asdict(self)
 
+
+# ---------- misconceptions ----------
+
+def normalize_misconceptions(raw) -> list[dict]:
+    """Turn a bank in any reasonable shape into [{"id": ..., "text": ..., <other keys kept>}].
+
+    Accepts a list of strings, or of dicts with the text under one of _TEXT_KEYS.
+    Items without usable text are dropped. Missing ids become "m1", "m2"...
+    """
+    result = []
+    for index, item in enumerate(raw or [], start=1):
+        if isinstance(item, str):
+            item = {"text": item}
+        if not isinstance(item, dict):
+            continue
+        text = next((str(item[k]).strip() for k in _TEXT_KEYS if item.get(k)), "")
+        if not text:
+            continue
+        result.append({**item, "id": str(item.get("id") or f"m{index}"), "text": text})
+    return result
+
+
+def choose_misconceptions(bank, count: int, rng: random.Random | None = None) -> list[dict]:
+    """Pick `count` misconceptions at random from the bank (fewer if the bank is smaller)."""
+    bank = normalize_misconceptions(bank)
+    count = max(0, min(int(count), len(bank)))
+    return (rng or random).sample(bank, count)
+
+
+def _misconception_instructions(session: dict) -> str:
+    chosen = session.get("student_misconceptions") or []
+    if chosen:
+        beliefs = "\n".join(f"- {m['text']}" for m in chosen)
+        return (
+            "You sincerely believe the following things. They are wrong, but you "
+            "don't know that:\n"
+            f"{beliefs}\n"
+            "Reveal them naturally through your questions and attempts to summarise "
+            "(not all at once). Don't invent other misconceptions."
+        )
+    count = session.get("misconception_count") or 0
+    if count > 0:  # no bank yet: make some up
+        return (
+            f"You start with {count} plausible misconception(s) about the topic. Pick "
+            "ones a real student would have (use the hidden course material if there "
+            "is any). Reveal them naturally through your questions and attempts to summarise."
+        )
+    return "You have no particular misconceptions; you're simply new to the topic."
+
+
+# ---------- the student ----------
+
 SYSTEM_PROMPT = """\
 You are Sam, a keen but confused university student. The user is your tutor
 and is teaching you a topic. This is a "learning by teaching" exercise: the
@@ -44,11 +117,9 @@ How to behave:
 - You know almost nothing about the topic except what the tutor tells you.
   Never explain the topic yourself or correct the tutor with facts they
   haven't given you.
-- You start with 2-3 plausible misconceptions about the topic (pick ones a
-  real student would have; use the hidden course material if there is any).
-  Reveal them naturally through your questions and attempts to summarise.
-  Hold onto each one until the tutor explains clearly why it's wrong; a
-  bare "no, that's wrong" isn't enough, ask why.
+- {misconceptions}
+- Hold onto each misconception until the tutor explains clearly why it's
+  wrong; a bare "no, that's wrong" isn't enough, ask why.
 - Ask ONE short, naive follow-up question at a time. Push for examples,
   the "why" behind things, and edge cases when explanations are vague or
   use jargon you haven't been taught.
@@ -63,21 +134,28 @@ Topic: {topic}
 
 OPENING_INSTRUCTION = (
     "(The session is starting. Greet your tutor in one or two sentences, say "
-    "what you're hoping to learn, and ask your first naive question, hinting "
-    "at one of your misconceptions.)"
+    "what you're hoping to learn, and ask your first naive question"
+    "{hint}.)"
 )
 
 FAILED_REPLY = "Sorry, I lost my train of thought. Could you say that again?"
 
 
 def _system_prompt(session: dict) -> str:
-    material = llm.course_material(session)
-    if material:
-        material = (
-            "\nHidden course material (for choosing misconceptions only; never quote it):\n"
-            + material
-        )
-    return SYSTEM_PROMPT.format(topic=llm.topic(session), material=material)
+    material = ""
+    # The material only helps when the student has to invent its own misconceptions.
+    if not session.get("student_misconceptions") and session.get("misconception_count"):
+        material = llm.course_material(session)
+        if material:
+            material = (
+                "\nHidden course material (for choosing misconceptions only; never quote it):\n"
+                + material
+            )
+    return SYSTEM_PROMPT.format(
+        misconceptions=_misconception_instructions(session),
+        topic=llm.topic(session),
+        material=material,
+    )
 
 
 def _history(session: dict) -> list[dict]:
@@ -98,7 +176,9 @@ def _ask(session: dict, latest: str) -> tuple[str | None, TurnStatus]:
 
 def opening(session: dict) -> str:
     """The student's first message when a session starts."""
-    text, _ = _ask(session, OPENING_INSTRUCTION)
+    has_misconceptions = session.get("student_misconceptions") or session.get("misconception_count")
+    hint = ", hinting at one of your misconceptions" if has_misconceptions else ""
+    text, _ = _ask(session, OPENING_INSTRUCTION.format(hint=hint))
     return text or (
         "Hi! I'm ready to learn. (Placeholder reply: set OPENAI_API_KEY in "
         "backend/.env to connect the AI student.)"

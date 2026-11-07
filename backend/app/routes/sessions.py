@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
@@ -8,23 +9,76 @@ from ..services.files import save_attachments
 
 bp = Blueprint("sessions", __name__)
 
+MAX_MISCONCEPTION_COUNT = 20
+
 
 def _session_folder(session_id: str) -> Path:
     return Path(current_app.config["UPLOAD_FOLDER"]) / session_id
 
 
+def _misconception_count() -> int:
+    """`misconception_count` form field, else the STUDENT_MISCONCEPTIONS setting."""
+    raw = request.form.get("misconception_count")
+    if raw is None or raw.strip() == "":
+        return current_app.config["STUDENT_MISCONCEPTIONS"]
+    count = int(raw)  # ValueError -> 400 in create_session
+    if not 0 <= count <= MAX_MISCONCEPTION_COUNT:
+        raise ValueError
+    return count
+
+
+def _misconception_bank() -> list:
+    """The misconceptions this session's student can be given.
+
+    PLACEHOLDER SOURCE: for now they can be passed in as a JSON list in the
+    `misconceptions` form field. Replace this with the real source (e.g. the
+    bank generated from the lecturer's content) once it exists; the student
+    agent normalises the format (agents/student.py normalize_misconceptions).
+    """
+    raw = request.form.get("misconceptions")
+    if not raw:
+        return []
+    bank = json.loads(raw)  # JSONDecodeError (a ValueError) -> 400 in create_session
+    if not isinstance(bank, list):
+        raise ValueError
+    return bank
+
+
 @bp.post("/sessions")
 def create_session():
-    """Start a session from the home page: multipart form with `prompt` + `files`."""
+    """Start a session from the home page.
+
+    Multipart form:
+      prompt               the topic
+      files                any number of attachments (course material)
+      misconception_count  optional, 0-20: how many misconceptions the student
+                           gets (default: STUDENT_MISCONCEPTIONS setting)
+      misconceptions       optional JSON list: the misconception bank (temporary;
+                           see _misconception_bank)
+    """
     prompt = (request.form.get("prompt") or "").strip()
     files = [f for f in request.files.getlist("files") if f and f.filename]
 
     if not prompt and not files:
         return jsonify(error="Add a prompt or at least one attachment."), 400
+    try:
+        count = _misconception_count()
+    except ValueError:
+        return jsonify(error=f"misconception_count must be a whole number from 0 to {MAX_MISCONCEPTION_COUNT}."), 400
+    try:
+        bank = _misconception_bank()
+    except ValueError:
+        return jsonify(error="misconceptions must be a JSON list."), 400
 
     session_id = store.new_id()
     attachments = save_attachments(files, _session_folder(session_id))
     session = store.create_session(session_id, prompt, attachments)
+    store.set_misconceptions(
+        session_id,
+        count=count,
+        bank=student.normalize_misconceptions(bank),
+        chosen=student.choose_misconceptions(bank, count),
+    )
     store.add_message(session_id, "assistant", student.opening(session))
 
     return jsonify(store.public_view(session_id)), 201
