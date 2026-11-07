@@ -2,12 +2,16 @@
 
 `chat()` returns None when the AI isn't available (no API key, or running
 tests), so each agent can fall back to a placeholder.
+
+Works inside the Flask app (settings from app.config) or on its own
+(settings from the environment / backend/.env via app.config.Config).
 """
 
 import json
+import logging
 from pathlib import Path
 
-from flask import current_app
+from flask import current_app, has_app_context
 from openai import OpenAI, OpenAIError
 from pypdf import PdfReader
 
@@ -20,9 +24,22 @@ class AIError(Exception):
     """The OpenAI request failed (network, bad key, rate limit...)."""
 
 
+def _settings() -> dict:
+    if has_app_context():
+        return current_app.config
+    from ..config import Config
+
+    return {"OPENAI_API_KEY": Config.OPENAI_API_KEY, "OPENAI_MODEL": Config.OPENAI_MODEL}
+
+
+def _logger():
+    return current_app.logger if has_app_context() else logging.getLogger(__name__)
+
+
 def _client() -> OpenAI | None:
-    key = current_app.config.get("OPENAI_API_KEY")
-    if not key or current_app.config.get("TESTING"):
+    settings = _settings()
+    key = settings.get("OPENAI_API_KEY")
+    if not key or settings.get("TESTING"):
         return None
     return OpenAI(api_key=key)
 
@@ -40,7 +57,7 @@ def chat(
         return None
     try:
         response = client.chat.completions.create(
-            model=current_app.config["OPENAI_MODEL"],
+            model=_settings()["OPENAI_MODEL"],
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -49,7 +66,7 @@ def chat(
         content = (response.choices[0].message.content or "").strip()
         return json.loads(content) if json_mode else content
     except (OpenAIError, json.JSONDecodeError) as err:
-        current_app.logger.error("OpenAI request failed: %s", err)
+        _logger().error("OpenAI request failed: %s", err)
         raise AIError(str(err)) from err
 
 
