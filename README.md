@@ -1,5 +1,18 @@
 # GUH_2026
 
+## Running the app
+
+Needs Python 3.10+ and Node 18+. From this folder, in bash (Git Bash on Windows):
+
+```bash
+./dev.sh
+```
+
+Then open http://localhost:5173. The first run sets everything up (Python venv + packages).
+Ctrl+C stops both the backend and frontend. Details in `backend/README.md` and `frontend/README.md`.
+
+---
+
 Hi Alex is here
 
 Hi Kardi is here
