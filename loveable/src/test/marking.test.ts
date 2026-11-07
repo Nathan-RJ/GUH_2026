@@ -43,6 +43,15 @@ describe("bandToState", () => {
     expect(bandToState(criterion("a", "zero"))).toBe("not_covered"); // never mentioned
     expect(bandToState(criterion("a", "zero", 1))).toBe("very_wrong"); // tried, got it wrong
   });
+
+  it("uses the marker's status when there is one, so wrong teaching shows red", () => {
+    const wrong = [{ turn: 2, quote: "swap if the left is smaller" }];
+    expect(bandToState({ ...criterion("a", "full", 1), status: "correct" })).toBe("correct");
+    expect(bandToState({ ...criterion("a", "partial", 1), status: "partially_correct" })).toBe("partial");
+    expect(bandToState({ ...criterion("a", "partial", 1), status: "partially_correct", incorrect_evidence: wrong })).toBe("slightly_wrong");
+    expect(bandToState({ ...criterion("a", "zero"), status: "incorrect", incorrect_evidence: wrong })).toBe("very_wrong");
+    expect(bandToState({ ...criterion("a", "zero"), status: "not_covered" })).toBe("not_covered");
+  });
 });
 
 describe("applyMarking", () => {

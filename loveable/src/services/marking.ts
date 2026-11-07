@@ -17,6 +17,10 @@ export interface CriterionResult {
   marks_awarded: number;
   max_marks: number;
   evidence?: { turn: number; quote: string }[];
+  /** How what the user taught compares with the rubric. Older replies may not have it. */
+  status?: "correct" | "partially_correct" | "incorrect" | "not_covered";
+  /** The user's wrong statements about this criterion, quoted. */
+  incorrect_evidence?: { turn: number; quote: string }[];
   feedback?: string;
 }
 
@@ -42,8 +46,23 @@ export async function markTranscript(lessonId: string, transcript: TranscriptEnt
   return data as MarkingResult;
 }
 
-/** A rubric band as a concept-card state. "zero" with evidence means they tried and got it wrong. */
+/**
+ * A marked criterion as a concept-card state:
+ *   correct -> green, partially_correct -> light green (light red if part of it was wrong),
+ *   incorrect -> red, not_covered -> grey.
+ * Replies without a status fall back to the band.
+ */
 export function bandToState(c: CriterionResult): ConceptState {
+  switch (c.status) {
+    case "correct":
+      return "correct";
+    case "partially_correct":
+      return c.incorrect_evidence?.length ? "slightly_wrong" : "partial";
+    case "incorrect":
+      return "very_wrong";
+    case "not_covered":
+      return "not_covered";
+  }
   if (c.band === "full") return "correct";
   if (c.band === "partial") return "partial";
   return c.evidence?.length ? "very_wrong" : "not_covered";
