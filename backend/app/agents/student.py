@@ -181,7 +181,7 @@ def opening(session: dict) -> str:
     hint = ", hinting at one of your misconceptions" if has_misconceptions else ""
     text, _ = _ask(session, OPENING_INSTRUCTION.format(hint=hint))
     return text or (
-        "Hi! I'm ready to learn. (Placeholder reply: set OPENAI_API_KEY in "
+        "Hi! I'm ready to learn. (Placeholder reply: set OPEN_API in "
         "backend/.env to connect the AI student.)"
     )
 

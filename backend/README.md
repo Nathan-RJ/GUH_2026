@@ -49,7 +49,7 @@ misconception bank, and holds onto them until the user explains them away.
 Create `backend/.env` with:
 
 ```
-OPENAI_API_KEY=sk-...
+OPEN_API=sk-...
 OPENAI_MODEL=gpt-4o-mini   # optional
 ```
 

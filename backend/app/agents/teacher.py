@@ -53,7 +53,7 @@ Topic: {topic}
 PLACEHOLDER = {
     "score": None,
     "correct": None,
-    "feedback": "(Placeholder review: set OPENAI_API_KEY in backend/.env to connect the teacher agent.)",
+    "feedback": "(Placeholder review: set OPEN_API in backend/.env to connect the teacher agent.)",
     "student_understanding": "",
     "misconceptions": [],
     "concepts_covered": [],

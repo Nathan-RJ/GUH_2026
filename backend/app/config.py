@@ -17,13 +17,13 @@ class Config:
     # Which website may call the API. "*" is fine for local dev.
     FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
 
-    # OpenAI. Put OPENAI_API_KEY=sk-... in backend/.env (API_KEY also works).
+    # OpenAI. Put OPEN_API=sk-... in backend/.env.
     # With no key, the AI student falls back to placeholder replies.
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") or os.environ.get("API_KEY")
-    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_API_KEY = os.environ.get("OPEN_API")
+    OPENAI_MODEL = os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
 
     # How many misconceptions the student is given, picked at random from the
     # session's misconception bank. This is the difficulty knob: 0 = the student
     # is just new to the topic, higher = harder to teach. A session can override
     # it (POST /api/sessions `misconception_count`).
-    STUDENT_MISCONCEPTIONS = int(os.environ.get("STUDENT_MISCONCEPTIONS", "3"))
+    STUDENT_MISCONCEPTIONS = int(os.environ.get("STUDENT_MISCONCEPTIONS") or "3")
