@@ -303,7 +303,7 @@ export const mockService: Reply2MeService = {
     return DEMO_MODULE;
   },
   async processDocument() {
-    await wait(1800 + Math.random() * 1500);
+    throw new Error("Document uploads require the real upload service.");
   },
   async getMyProgress() {
     return structuredClone(getMine());

@@ -79,6 +79,16 @@ export interface UploadedDoc {
   size: number;
 }
 
+export interface DocumentUpload {
+  file: File;
+  title: string;
+  kind: DocKind;
+}
+
+export type DocumentResult =
+  | { status: "draft"; lesson_id: string }
+  | { status: "unconfirmed"; message: string };
+
 export interface TopicRecord {
   state: ConceptState;
   score: number | null;
@@ -95,7 +105,7 @@ export interface StudentOverview {
 
 export interface Reply2MeService {
   getModule(): Promise<Module>;
-  processDocument(doc: UploadedDoc): Promise<void>;
+  processDocument(doc: DocumentUpload, onUploaded?: () => void): Promise<DocumentResult>;
   /** The signed-in student's own progress only. */
   getMyProgress(): Promise<Record<string, TopicRecord>>;
   /** Teacher-only: every student's progress. */
