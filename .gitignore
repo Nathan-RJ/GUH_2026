@@ -1,0 +1,23 @@
+# ---------- FRONTEND ----------
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/*.local
+
+frontend/package-lock.json
+
+# ---------- BACKEND ----------
+# Secrets (backend/.env.example is still committed)
+backend/.env
+
+# Python (anywhere in the repo)
+__pycache__/
+*.pyc
+backend/venv/
+backend/.venv/
+backend/.pytest_cache/
+
+# Local data
+backend/*.db
+backend/uploads/*
+!backend/uploads/.gitkeep

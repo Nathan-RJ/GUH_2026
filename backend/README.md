@@ -26,4 +26,15 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 - `app/routes/sessions.py`  the endpoints above
 - `app/services/store.py`   in-memory session storage (swap for a database later)
 - `app/services/files.py`   saves uploads
-- `app/services/ai.py`      **where the AI plugs in**: placeholder replies for now
+- `app/services/ai.py`      the AI student (OpenAI): system prompt, reads uploaded .txt/.pdf etc. as hidden course material
+
+## AI setup
+
+Create `backend/.env` with:
+
+```
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini   # optional
+```
+
+Without a key (and always in tests) the app returns placeholder replies.
