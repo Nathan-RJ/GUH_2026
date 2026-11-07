@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { approach, blobPath, blobRadii, mouthPath, type MouthShape } from "./shape";
 
@@ -12,8 +12,25 @@ interface Props {
   level: number;
   speaker: BlobSpeaker;
   mood?: BlobMood;
+  /** Body colours (each student type has its own, see src/voice/students.ts). Default: green. */
+  colours?: BlobColours | undefined;
   className?: string;
 }
+
+export interface BlobColours {
+  light: string;
+  main: string;
+  dark: string;
+  /** Eyebrows and mouth */
+  feature: string;
+}
+
+const GREEN: BlobColours = {
+  light: "oklch(0.92 0.12 145)",
+  main: "var(--brand)",
+  dark: "oklch(0.45 0.14 155)",
+  feature: "var(--brand-foreground)",
+};
 
 // Drawing space (the SVG scales to the container)
 const CX = 150;
@@ -46,8 +63,14 @@ const GAZE: Record<BlobSpeaker, [number, number]> = {
   thinking: [5, -6], // up and away
 };
 
-/** The AI student: a squishy green blob whose mouth moves with its voice. */
-export function StudentBlob({ level, speaker, mood = "neutral", className }: Props) {
+/** The AI student: a squishy blob whose mouth moves with its voice. */
+export function StudentBlob({
+  level,
+  speaker,
+  mood = "neutral",
+  colours = GREEN,
+  className,
+}: Props) {
   const gradId = `blob-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const live = useRef({ level, speaker, mood });
   live.current = { level, speaker, mood };
@@ -100,7 +123,7 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
       );
       if (bodyRef.current) {
         const glow = 18 + voice * 42;
-        bodyRef.current.style.filter = `drop-shadow(0 0 ${glow.toFixed(1)}px color-mix(in oklab, var(--brand) ${(30 + voice * 45).toFixed(0)}%, transparent))`;
+        bodyRef.current.style.filter = `drop-shadow(0 0 ${glow.toFixed(1)}px color-mix(in oklab, var(--blob-main) ${(30 + voice * 45).toFixed(0)}%, transparent))`;
       }
       shadowRef.current?.setAttribute("rx", (78 * sx).toFixed(2));
 
@@ -188,13 +211,22 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
       )}
       role="img"
       aria-label={label}
+      style={
+        {
+          "--blob-light": colours.light,
+          "--blob-main": colours.main,
+          "--blob-dark": colours.dark,
+          "--blob-feature": colours.feature,
+        } as CSSProperties
+      }
     >
       {/* Ripples while you talk */}
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="absolute inset-10 rounded-full border border-brand/40 transition-all duration-150"
+          className="absolute inset-10 rounded-full border transition-all duration-150"
           style={{
+            borderColor: "color-mix(in oklab, var(--blob-main) 40%, transparent)",
             transform: `scale(${1 + (speaker === "you" ? level : 0) * (0.35 + i * 0.25)})`,
             opacity: speaker === "you" ? Math.max(0.08, 0.5 - i * 0.15) : 0,
           }}
@@ -204,9 +236,9 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
       <svg viewBox="0 0 300 300" className="relative h-full w-full overflow-visible" aria-hidden>
         <defs>
           <radialGradient id={gradId} cx="35%" cy="28%" r="80%">
-            <stop offset="0%" stopColor="oklch(0.92 0.12 145)" />
-            <stop offset="48%" stopColor="var(--brand)" />
-            <stop offset="100%" stopColor="oklch(0.45 0.14 155)" />
+            <stop offset="0%" style={{ stopColor: "var(--blob-light)" }} />
+            <stop offset="48%" style={{ stopColor: "var(--blob-main)" }} />
+            <stop offset="100%" style={{ stopColor: "var(--blob-dark)" }} />
           </radialGradient>
         </defs>
 
@@ -263,7 +295,7 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
               ref={(el) => void (browRefs.current[i] = el)}
               d={INITIAL_BROWS[i]}
               fill="none"
-              stroke="var(--brand-foreground)"
+              stroke="var(--blob-feature)"
               strokeWidth={4}
               strokeLinecap="round"
               opacity={0.75}
@@ -272,8 +304,8 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
           <path
             ref={mouthRef}
             d={INITIAL_MOUTH}
-            fill="var(--brand-foreground)"
-            stroke="var(--brand-foreground)"
+            fill="var(--blob-feature)"
+            stroke="var(--blob-feature)"
             strokeWidth={2.5}
             strokeLinejoin="round"
           />
@@ -286,8 +318,8 @@ export function StudentBlob({ level, speaker, mood = "neutral", className }: Pro
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="h-2.5 w-2.5 animate-bounce rounded-full bg-brand"
-              style={{ animationDelay: `${i * 120}ms` }}
+              className="h-2.5 w-2.5 animate-bounce rounded-full"
+              style={{ animationDelay: `${i * 120}ms`, backgroundColor: "var(--blob-main)" }}
             />
           ))}
         </div>

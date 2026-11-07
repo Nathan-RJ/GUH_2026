@@ -3,7 +3,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 
-from ..agents import student
+from ..agents import personalities, student
 from ..services import store
 from ..services.files import save_attachments
 
@@ -55,6 +55,8 @@ def create_session():
                            gets (default: STUDENT_MISCONCEPTIONS setting)
       misconceptions       optional JSON list: the misconception bank (temporary;
                            see _misconception_bank)
+      personality          optional: eager | sceptic | dreamer | knowitall | shy
+                           (default: random; see agents/personalities.py)
     """
     prompt = (request.form.get("prompt") or "").strip()
     files = [f for f in request.files.getlist("files") if f and f.filename]
@@ -69,10 +71,15 @@ def create_session():
         bank = _misconception_bank()
     except ValueError:
         return jsonify(error="misconceptions must be a JSON list."), 400
+    try:
+        personality = personalities.choose(request.form.get("personality"))
+    except ValueError:
+        return jsonify(error=f"personality must be one of: {', '.join(personalities.PERSONALITIES)}."), 400
 
     session_id = store.new_id()
     attachments = save_attachments(files, _session_folder(session_id))
     session = store.create_session(session_id, prompt, attachments)
+    session["personality"] = personality  # sent to the page too, so it can match voice + colour
     store.set_misconceptions(
         session_id,
         count=count,

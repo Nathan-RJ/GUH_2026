@@ -3,7 +3,7 @@ import io
 import pytest
 
 from app import create_app
-from app.voice import elevenlabs
+from app.voice import elevenlabs, settings
 
 
 @pytest.fixture
@@ -23,11 +23,13 @@ def without_key(monkeypatch):
 
 
 def test_status(client, with_key):
-    assert client.get("/api/voice/status").get_json() == {"enabled": True}
+    data = client.get("/api/voice/status").get_json()
+    assert data["enabled"] is True
+    assert data["voices"] == ["gigi", "jessica", "laura", "charlie", "liam"]
 
 
 def test_not_configured(client, without_key):
-    assert client.get("/api/voice/status").get_json() == {"enabled": False}
+    assert client.get("/api/voice/status").get_json()["enabled"] is False
     assert client.post("/api/voice/speak", json={"text": "hi"}).status_code == 503
     assert client.post("/api/voice/transcribe").status_code == 503
 
@@ -46,6 +48,24 @@ def test_speak_returns_audio(client, with_key, monkeypatch):
     assert res.data == b"MP3DATA"
     assert calls["text"] == "Hello there"
     assert calls["api_key"] == "test-key"
+
+
+def test_speak_with_chosen_voice(client, with_key, monkeypatch):
+    calls = []
+    monkeypatch.setattr(elevenlabs, "text_to_speech", lambda text, **kw: calls.append(kw) or b"MP3")
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "")
+
+    assert client.post("/api/voice/speak", json={"text": "hi", "voice": "Liam"}).status_code == 200
+    assert client.post("/api/voice/speak", json={"text": "hi"}).status_code == 200
+    assert calls[0]["voice_id"] == settings.VOICES["liam"]
+    assert calls[1]["voice_id"] == settings.VOICES["gigi"]  # default
+
+
+def test_speak_rejects_unknown_voice(client, with_key, monkeypatch):
+    monkeypatch.setattr(elevenlabs, "text_to_speech", lambda *a, **k: b"MP3")
+    res = client.post("/api/voice/speak", json={"text": "hi", "voice": "someone-else"})
+    assert res.status_code == 400
+    assert "gigi" in res.get_json()["error"]
 
 
 def test_speak_validation(client, with_key):

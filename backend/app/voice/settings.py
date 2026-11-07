@@ -5,8 +5,18 @@ from pathlib import Path
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"  # backend/.env
 
+# The student voices the page can pick from (ElevenLabs premade voices).
+# Keep the names in sync with loveable/src/voice/voices.ts (which sets each blob colour).
+VOICES = {
+    "gigi": "jBpfuIE2acCO8z3wKNLl",  # childish
+    "jessica": "cgSgspJ2msm6clMCkdW9",  # young, playful
+    "laura": "FGY2WhTYpPnrIDTdsKH5",  # young, quirky
+    "charlie": "IKne3meq5aSn9XLyUdCD",  # young man
+    "liam": "TX3LPaxmHKxFdv7VOQHJ",  # young man
+}
+
 # Defaults (override any of these in backend/.env)
-DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"  # premade voice used in ElevenLabs' docs
+DEFAULT_VOICE_ID = VOICES["gigi"]
 DEFAULT_TTS_MODEL = "eleven_flash_v2_5"  # low-latency text-to-speech
 DEFAULT_STT_MODEL = "scribe_v2"  # speech-to-text
 
@@ -31,7 +41,11 @@ def api_key() -> str:
     return os.environ.get("ELEVENLABS_API_KEY", "").strip()
 
 
-def voice_id() -> str:
+def voice_id(name: str | None = None) -> str | None:
+    """ElevenLabs voice ID for a voice name from VOICES (None if it's not one of them).
+    With no name: ELEVENLABS_VOICE_ID from .env, else the default."""
+    if name:
+        return VOICES.get(name.strip().lower())
     return os.environ.get("ELEVENLABS_VOICE_ID", "").strip() or DEFAULT_VOICE_ID
 
 

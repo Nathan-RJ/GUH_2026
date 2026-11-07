@@ -12,13 +12,14 @@ export function audioContext(): AudioContext {
   return ctx;
 }
 
-const cache = new Map<string, string>(); // text -> object URL, so replays cost no credits
+const cache = new Map<string, string>(); // voice + text -> object URL, so replays cost no credits
 
-export async function audioUrlFor(text: string): Promise<string> {
-  const hit = cache.get(text);
+export async function audioUrlFor(text: string, voice?: string): Promise<string> {
+  const key = `${voice ?? ""}|${text}`;
+  const hit = cache.get(key);
   if (hit) return hit;
-  const url = URL.createObjectURL(await synthesize(text));
-  cache.set(text, url);
+  const url = URL.createObjectURL(await synthesize(text, voice));
+  cache.set(key, url);
   return url;
 }
 
