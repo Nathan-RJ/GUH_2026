@@ -1,0 +1,10 @@
+# requirements.txt - Python packages the backend needs.
+# Install with:  pip install -r requirements.txt
+flask              # the web framework
+flask-cors         # lets the Lovable frontend call this API from another domain
+flask-sqlalchemy   # database (SQLite for the hackathon)
+python-dotenv      # loads secrets from .env
+anthropic          # LLM SDK (swap for openai if you prefer; only ai/client.py changes)
+pypdf              # read text out of uploaded PDFs (ingestion.py)
+python-pptx        # read text out of uploaded slides (ingestion.py)
+pytest             # tests
