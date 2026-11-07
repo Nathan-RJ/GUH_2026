@@ -6,10 +6,10 @@ import { DEMO_MODULE } from "@/services/demo-data";
 import { service, type Concept, type SamMode, type TeachingSession } from "@/services";
 import { ConceptMap } from "@/components/ConceptMap";
 import { StateLegend } from "@/components/StateLegend";
-import { VoiceOrb, type OrbSpeaker } from "@/components/VoiceOrb";
+import { StudentBlob, type BlobMood, type BlobSpeaker } from "@/components/student-blob";
 import { Eyebrow } from "@/components/Eyebrow";
 import { Button } from "@/components/ui/button";
-import { useSpeechRecognition, useMicLevel, speak, stopSpeaking } from "@/hooks/use-speech";
+import { useStudentVoice } from "@/voice";
 import { cn } from "@/lib/utils";
 import { STATE_META } from "@/lib/states";
 
@@ -50,30 +50,21 @@ function TeachPage() {
   const [youLine, setYouLine] = useState("");
   const [typeOpen, setTypeOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [aiLevel, setAiLevel] = useState(0);
   const sessionRef = useRef<TeachingSession | null>(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const bump = useRef(0);
 
-  // Animate the circle while the AI student talks; word boundaries add a kick.
-  useEffect(() => {
-    if (!aiSpeaking) {
-      setAiLevel(0);
-      return;
-    }
-    let raf = 0;
-    const start = performance.now();
-    const tick = (t: number) => {
-      const e = (t - start) / 1000;
-      bump.current *= 0.9;
-      const base = 0.25 + 0.25 * Math.abs(Math.sin(e * 7.3)) * (0.6 + 0.4 * Math.sin(e * 2.1));
-      setAiLevel(Math.min(1, base + bump.current));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [aiSpeaking]);
+  const send = (text: string) => {
+    if (!text.trim()) return;
+    voiceRef.current.stop();
+    setAiSpeaking(false);
+    sessionRef.current?.sendMessage(text);
+    setDraft("");
+  };
+  // ElevenLabs voice (falls back to the browser's voice): see src/voice/
+  const voice = useStudentVoice({ onFinal: send, onError: (msg) => toast.error(msg) });
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
 
   useEffect(() => {
     const s = service.startSession(topic.id);
@@ -91,8 +82,8 @@ function TeachPage() {
           setYouLine("");
           const end = () => setAiSpeaking(false);
           setAiSpeaking(true);
-          if (!mutedRef.current && "speechSynthesis" in window) {
-            speak(e.message.text, { onBoundary: () => (bump.current = 0.45), onEnd: end });
+          if (!mutedRef.current) {
+            voiceRef.current.speak(e.message.text, { onEnd: end });
           } else {
             clearTimeout(fakeTimer);
             fakeTimer = setTimeout(end, Math.min(6000, e.message.text.length * 50));
@@ -120,22 +111,20 @@ function TeachPage() {
       clearTimeout(fakeTimer);
       unsub();
       s.close();
-      stopSpeaking();
+      voiceRef.current.stop();
     };
   }, [topic.id, navigate]);
 
-  const send = (text: string) => {
-    if (!text.trim()) return;
-    stopSpeaking();
-    setAiSpeaking(false);
-    sessionRef.current?.sendMessage(text);
-    setDraft("");
-  };
-  const mic = useSpeechRecognition(send);
-  const micLevel = useMicLevel(mic.listening);
-
-  const speaker: OrbSpeaker = mic.listening ? "you" : thinking ? "thinking" : aiSpeaking ? "ai" : "idle";
-  const level = mic.listening ? micLevel : aiSpeaking ? aiLevel : 0;
+  const mic = voice;
+  const speaker: BlobSpeaker = mic.listening ? "you" : thinking ? "thinking" : aiSpeaking ? "ai" : "idle";
+  const level = mic.listening ? voice.micLevel : aiSpeaking ? voice.speakingLevel : 0;
+  // The blob looks worried while it holds wrong ideas, happy once it mostly gets it
+  const strong = concepts.filter((c) => c.state === "correct").length;
+  const mood: BlobMood = concepts.some((c) => c.state === "very_wrong" || c.state === "slightly_wrong")
+    ? "confused"
+    : strong >= concepts.length / 2
+      ? "happy"
+      : "neutral";
   const caption = mic.listening ? mic.interim || "Listening…" : speaker === "you" || thinking ? youLine : aiLine;
   const captionWho = speaker === "you" || thinking ? "You" : "Your student";
 
@@ -147,7 +136,7 @@ function TeachPage() {
           <h1 className="mt-3 text-4xl font-medium leading-none md:text-6xl">{topic.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" size="icon" className="h-12 w-12" onClick={() => { setMuted(!muted); stopSpeaking(); }} aria-label={muted ? "Unmute" : "Mute"}>
+          <Button variant="outline" size="icon" className="h-12 w-12" onClick={() => { setMuted(!muted); voice.stop(); }} aria-label={muted ? "Unmute" : "Mute"}>
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
           </Button>
           <Button size="lg" onClick={() => sessionRef.current?.finish()}>
@@ -177,7 +166,7 @@ function TeachPage() {
           </div>
 
           <div className="flex flex-1 items-center justify-center">
-            <VoiceOrb level={level} speaker={speaker} />
+            <StudentBlob level={level} speaker={speaker} mood={mood} />
           </div>
 
           <div className="mb-7 min-h-[104px] w-full max-w-xl text-center">
@@ -194,7 +183,7 @@ function TeachPage() {
               onClick={mic.toggle}
               disabled={!mic.supported}
               aria-label={mic.listening ? "Stop talking" : "Start talking"}
-              title={mic.supported ? undefined : "Speech recognition isn't supported in this browser — try Chrome or Edge"}
+              title={mic.supported ? (voice.engine === "elevenlabs" ? "Voice: ElevenLabs" : "Voice: browser") : voice.engine === "checking" ? "Getting the microphone ready…" : "Speech recognition isn't supported in this browser — try Chrome or Edge"}
               className={cn(
                 "relative grid h-20 w-20 place-items-center rounded-full transition-all duration-300 disabled:opacity-40",
                 mic.listening ? "scale-110 bg-brand text-brand-foreground" : "bg-card text-card-foreground hover:scale-105",
