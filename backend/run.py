@@ -1,8 +1,7 @@
-# run.py
-# ------------------------------------------------------------------
-# Entry point. Run `python run.py` to start the Flask dev server.
-#
-# - Imports create_app() from app/__init__.py
-# - Starts the server on http://localhost:5000
-# - The Lovable frontend calls this server at /api/...
-# ------------------------------------------------------------------
+# Start the backend:  python run.py   ->  http://127.0.0.1:5000
+from app import create_app
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=True)

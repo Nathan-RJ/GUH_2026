@@ -1,5 +1,8 @@
-# app/routes/health.py
-# ------------------------------------------------------------------
-# GET /api/health   ->  {"status": "ok"}
-# Lets the frontend team check that the backend is running.
-# ------------------------------------------------------------------
+from flask import Blueprint, jsonify
+
+bp = Blueprint("health", __name__)
+
+
+@bp.get("/health")
+def health():
+    return jsonify(status="ok")

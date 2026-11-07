@@ -1,25 +1,17 @@
 # Frontend
 
-React + Vite + TypeScript + Tailwind. Talks to the Flask backend in `../backend`.
-
-## Run it (once the code is written)
+React + Vite + TypeScript. Talks to the Flask backend in `../backend`.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Opens on http://localhost:5173. Any request to `/api/...` is proxied to Flask
-on http://localhost:5000 (see `vite.config.ts`), so start the backend too.
+Open http://localhost:5173. Requests to `/api/...` are forwarded to Flask on
+port 5000 (see `vite.config.ts`), so start the backend too.
 
-## How it is organised
-
-- `src/pages/`       one file per screen (student side + lecturer side)
-- `src/components/`  reusable pieces used by the pages
-- `src/api/`         the ONLY place that calls the backend (mirrors backend/app/routes)
-- `src/types/`       TypeScript shapes of the JSON the backend sends back
-- `src/hooks/`       stateful logic (running a session, recording voice)
-- `src/context/`     app-wide state (who is logged in, student or lecturer)
-- `src/lib/mockData.ts` fake backend responses so the UI can be built before Flask works
-
-Each file starts with a comment saying what it is for.
+- `src/pages/Home.tsx`     prompt + attachments -> starts a session
+- `src/pages/Session.tsx`  the session screen (sidebar + chat). Build the main sections here.
+- `src/api.ts`             every call to the backend
+- `src/types.ts`           shapes of the backend's JSON
+- `src/index.css`          all the styles

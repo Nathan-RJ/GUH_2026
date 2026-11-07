@@ -1,6 +1,13 @@
-// src/main.tsx
-// ------------------------------------------------------------------
-// Entry point. Mounts <App /> into the #root div in index.html,
-// wrapped in the router and UserContext provider.
-// Imports index.css so Tailwind styles load.
-// ------------------------------------------------------------------
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
+);

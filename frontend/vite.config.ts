@@ -1,9 +1,11 @@
-// vite.config.ts
-// ------------------------------------------------------------------
-// Vite (dev server + build tool) settings.
-//
-// - Enables the React plugin
-// - PROXY: forwards any request to /api/... to Flask on
-//   http://localhost:5000, so in dev there are no CORS problems and
-//   the frontend can just call fetch("/api/...")
-// ------------------------------------------------------------------
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    // Any fetch("/api/...") from the browser is forwarded to Flask.
+    proxy: { "/api": "http://127.0.0.1:5000" },
+  },
+});
