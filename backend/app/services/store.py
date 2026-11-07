@@ -8,9 +8,12 @@ A session looks like:
   "id": "a1b2c3d4e5f6",
   "prompt": "what the user typed on the home page",
   "attachments": [{"name", "original_name", "size", "content_type"}],
-  "messages": [{"role": "user" | "assistant", "text", "created_at"}],
+  "messages": [{"role": "user" | "assistant", "text", "created_at", "review"?}],
   "created_at": "ISO timestamp"
 }
+
+Student ("assistant") replies to an explanation also carry "review": the
+teacher agent's review of that turn (shape documented in agents/teacher.py).
 """
 
 import uuid
@@ -43,7 +46,9 @@ def get_session(session_id: str) -> dict | None:
     return _sessions.get(session_id)
 
 
-def add_message(session_id: str, role: str, text: str) -> dict:
+def add_message(session_id: str, role: str, text: str, review: dict | None = None) -> dict:
     message = {"role": role, "text": text, "created_at": _now()}
+    if review is not None:
+        message["review"] = review
     _sessions[session_id]["messages"].append(message)
     return message

@@ -18,7 +18,7 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 | GET  | `/api/health` | `{"status": "ok"}` |
 | POST | `/api/sessions` | multipart form: `prompt` + any number of `files` -> new session |
 | GET  | `/api/sessions/<id>` | the session (prompt, attachments, messages) |
-| POST | `/api/sessions/<id>/messages` | `{"text": "..."}` -> updated session with the reply |
+| POST | `/api/sessions/<id>/messages` | `{"text": "..."}` (the user's explanation) -> updated session: the student's reply, with the teacher's `review` on it |
 | GET  | `/api/sessions/<id>/attachments/<name>` | download an uploaded file |
 
 ## Files
@@ -26,7 +26,9 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 - `app/routes/sessions.py`  the endpoints above
 - `app/services/store.py`   in-memory session storage (swap for a database later)
 - `app/services/files.py`   saves uploads
-- `app/services/ai.py`      the AI student (OpenAI): system prompt, reads uploaded .txt/.pdf etc. as hidden course material
+- `app/agents/student.py`   the AI student the user teaches (`opening`, `respond`)
+- `app/agents/teacher.py`   reviews each turn and returns a structured `review` (shape documented in the file)
+- `app/agents/llm.py`       shared OpenAI client; reads uploaded .txt/.pdf etc. as hidden course material
 
 ## AI setup
 

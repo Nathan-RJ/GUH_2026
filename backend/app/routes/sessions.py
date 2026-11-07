@@ -2,7 +2,8 @@ from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 
-from ..services import ai, store
+from ..agents import student, teacher
+from ..services import store
 from ..services.files import save_attachments
 
 bp = Blueprint("sessions", __name__)
@@ -24,7 +25,7 @@ def create_session():
     session_id = store.new_id()
     attachments = save_attachments(files, _session_folder(session_id))
     session = store.create_session(session_id, prompt, attachments)
-    store.add_message(session_id, "assistant", ai.opening_message(session))
+    store.add_message(session_id, "assistant", student.opening(session))
 
     return jsonify(store.get_session(session_id)), 201
 
@@ -39,7 +40,12 @@ def get_session(session_id: str):
 
 @bp.post("/sessions/<session_id>/messages")
 def send_message(session_id: str):
-    """Body: {"text": "..."}. Returns the whole updated session."""
+    """One teaching turn. Body: {"text": "<the user's explanation>"}.
+
+    The student agent replies, then the teacher agent reviews the turn. The
+    review is saved on the student's message (`message["review"]`). Returns
+    the whole updated session.
+    """
     session = store.get_session(session_id)
     if session is None:
         return jsonify(error="Session not found."), 404
@@ -48,8 +54,12 @@ def send_message(session_id: str):
     if not text:
         return jsonify(error="Message is empty."), 400
 
+    # Both agents see the history *before* this turn, plus the new messages.
+    student_reply = student.respond(session, text)
+    review = teacher.review(session, text, student_reply)
+
     store.add_message(session_id, "user", text)
-    store.add_message(session_id, "assistant", ai.reply(session, text))
+    store.add_message(session_id, "assistant", student_reply, review=review)
     return jsonify(store.get_session(session_id))
 
 
