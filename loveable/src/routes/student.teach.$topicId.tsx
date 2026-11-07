@@ -11,7 +11,6 @@ import { Eyebrow } from "@/components/Eyebrow";
 import { Button } from "@/components/ui/button";
 import { blobColours, randomStudent, useStudentVoice, type StudentType } from "@/voice";
 import { cn } from "@/lib/utils";
-import { STATE_META } from "@/lib/states";
 
 export const Route = createFileRoute("/student/teach/$topicId")({
   head: ({ params }) => {
@@ -147,19 +146,6 @@ function TeachPage() {
             <Flag className="h-4 w-4" /> Finish and test
           </Button>
         </div>
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-2.5" aria-label="Subtopics">
-        {concepts.map((c) => (
-          <span
-            key={c.id}
-            title={STATE_META[c.state].label}
-            className="rounded-full border px-4 py-2 text-xs font-semibold text-foreground shadow-sm transition-all duration-700"
-            style={{ backgroundColor: c.state === "not_covered" ? "var(--card)" : `color-mix(in oklab, ${STATE_META[c.state].fill} ${c.state === "correct" ? 90 : 45}%, var(--card))`, borderColor: STATE_META[c.state].fill }}
-          >
-            {c.label}
-          </span>
-        ))}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
