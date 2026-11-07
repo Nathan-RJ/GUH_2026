@@ -19,9 +19,7 @@ Agent goes back and forth with you until its happy, trying to get you to explain
 2 correct statements, one incorrect.
 Have to reason through and find which is the false statement.
 
-<<<<<<< HEAD
-=======
-- (Reply) 2 Me
+# (Reply) 2 Me
 is a flight simulator for learning by teaching. Students teach a confused AI student that only knows what they tell it, and is marked against their lecturer's real rubric.
 The university problem
 • Students revise passively by rereading and highlighting, and only discover their gaps in the exam.
@@ -41,4 +39,3 @@ Student side
 4. Watches the AI student's concept map update live: misconceptions show red, then turn green once fixed.
 5. At the end, the AI student sits a short exam built from the lecturer's content and is marked against the hidden rubric. Its mark is the student's score.
 6. Gets feedback: misconceptions left unfixed, concepts never covered and where explanations were vague. All feedback stays at topic level so no exam questions are revealed.
->>>>>>> fa3a3ab (idea proposal)
