@@ -1,9 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Mic, MicOff, Volume2, VolumeX, Flag, Keyboard, Send } from "lucide-react";
-import { DEMO_MODULE } from "@/services/demo-data";
-import { service, type Concept, type SamMode, type TeachingSession } from "@/services";
+import { FIXED_MODULES } from "@/services/demo-data";
+import { findTopic } from "@/services/modules";
+import { service, type Concept, type SamMode, type TeachingSession, type Topic } from "@/services";
 import { ConceptMap } from "@/components/ConceptMap";
 import { StateLegend } from "@/components/StateLegend";
 import { StudentBlob, type BlobMood, type BlobSpeaker } from "@/components/student-blob";
@@ -14,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/student/teach/$topicId")({
   head: ({ params }) => {
-    const t = DEMO_MODULE.topics.find((x) => x.id === params.topicId)?.title ?? "a topic";
+    const t = findTopic(FIXED_MODULES, params.topicId)?.topic.title ?? "a topic";
     return {
       meta: [
         { title: `Teach ${t} — Reply 2 Me` },
@@ -38,8 +40,28 @@ const MODE_META: Record<SamMode, { label: string; dot: string }> = {
 
 function TeachPage() {
   const { topicId } = Route.useParams();
+  // The topic may be in any module, including lecturer uploads loaded from the backend.
+  const { data: modules, isPending } = useQuery({ queryKey: ["modules"], queryFn: () => service.getModules() });
+  const found = modules ? findTopic(modules, topicId) : null;
+
+  if (isPending) return <main className="mx-auto max-w-[1440px] px-6 py-24 text-center text-muted-foreground">Loading…</main>;
+  if (!found) {
+    return (
+      <main className="mx-auto grid min-h-[calc(100vh-80px)] max-w-xl place-items-center px-6 py-24 text-center">
+        <div>
+          <h1 className="text-4xl font-medium">Topic not found</h1>
+          <p className="mt-3 text-muted-foreground">It may have been removed, or the backend isn't running.</p>
+          <Button asChild className="mt-7"><Link to="/student">Choose a topic</Link></Button>
+        </div>
+      </main>
+    );
+  }
+  return <TeachSession key={found.topic.id} topic={found.topic} />;
+}
+
+function TeachSession({ topic }: { topic: Topic }) {
+  const topicId = topic.id;
   const navigate = useNavigate();
-  const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
   const [concepts, setConcepts] = useState<Concept[]>(topic.concepts.map((c) => ({ ...c, state: "not_covered" })));
   const [mode, setMode] = useState<SamMode>("curious");
   const [muted, setMuted] = useState(false);
@@ -72,7 +94,7 @@ function TeachPage() {
   voiceRef.current = voice;
 
   useEffect(() => {
-    const s = service.startSession(topic.id);
+    const s = service.startSession(topic);
     sessionRef.current = s;
     let fakeTimer: ReturnType<typeof setTimeout>;
     const unsub = s.subscribe((e) => {
@@ -125,7 +147,7 @@ function TeachPage() {
       s.close();
       voiceRef.current.stop();
     };
-  }, [topic.id, navigate]);
+  }, [topic, navigate]);
 
   const mic = voice;
   const speaker: BlobSpeaker = mic.listening ? "you" : thinking ? "thinking" : aiSpeaking ? "ai" : "idle";

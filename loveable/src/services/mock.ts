@@ -1,5 +1,6 @@
 import {
   DEMO_MODULE,
+  FIXED_MODULES,
   DEMO_SCRIPTS,
   RUBRIC,
   SAM_MISCONCEPTIONS,
@@ -20,6 +21,7 @@ import type {
   SamMode,
   SessionEvent,
   StudentOverview,
+  Topic,
   TopicRecord,
   TeachingSession,
 } from "./types";
@@ -136,8 +138,10 @@ class MockSession implements TeachingSession {
   private lastMark: MarkingResult | null = null;
   private pendingMark: Promise<void> = Promise.resolve();
 
-  constructor(private topicId: string) {
-    const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
+  private topicId: string;
+
+  constructor(private topic: Topic) {
+    this.topicId = topic.id;
     this.lessonId = topic.lessonId;
     this.concepts = topic.concepts.map((c) => ({ ...c, state: "not_covered" as ConceptState }));
     setTimeout(() => {
@@ -241,7 +245,7 @@ class MockSession implements TeachingSession {
       this.emit({ type: "guardrail_block", message: "That statement doesn't match your module content" });
       this.setMode("stubborn");
       if (this.wrongCount >= 3) {
-        const topic = DEMO_MODULE.topics.find((t) => t.id === this.topicId)!;
+        const topic = this.topic;
         const esc: Escalation = {
           id: nextId("esc"),
           student: "You (demo student)",
@@ -314,6 +318,7 @@ class MockSession implements TeachingSession {
     await this.pendingMark; // real lessons: use the latest live marking
     const result: ExamResult = {
       topicId: this.topicId,
+      topicTitle: this.topic.title,
       score: this.lastMark ? Math.round(this.lastMark.score) : scoreConcepts(this.concepts),
       concepts: this.concepts.map((c) => ({ ...c, note: c.note ?? "Not covered in your session." })),
     };
@@ -337,6 +342,11 @@ export const mockService: Reply2MeService = {
   async getModule() {
     return DEMO_MODULE;
   },
+  async getModules() {
+    // Lecturer-uploaded modules aren't loaded yet (being built separately): add them here,
+    // one Module per upload title, with a lessonId on each topic so it's marked live.
+    return FIXED_MODULES;
+  },
   async processDocument() {
     throw new Error("Document uploads require the real upload service.");
   },
@@ -359,8 +369,8 @@ export const mockService: Reply2MeService = {
     const e = state.escalations.find((x) => x.id === id);
     if (e) e.reviewed = true;
   },
-  startSession(topicId) {
-    return new MockSession(topicId);
+  startSession(topic) {
+    return new MockSession(topic);
   },
   getDemoScript(topicId) {
     return (

@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, ChevronDown, Lightbulb, Users } from "lucide-react";
-import { Fragment, useState } from "react";
-import type { StudentOverview, Topic } from "@/services";
+import { Fragment, useEffect, useState } from "react";
+import type { Module, StudentOverview, Topic } from "@/services";
 import { service } from "@/services";
 import { STATE_META, STATE_ORDER } from "@/lib/states";
 import { StateLegend } from "@/components/StateLegend";
@@ -23,9 +23,11 @@ export const Route = createFileRoute("/lecturer/dashboard")({
   component: Dashboard,
 });
 
+const SELECTED_KEY = "reply2me.dashboardModule";
+
 function Dashboard() {
   const qc = useQueryClient();
-  const { data: module } = useQuery({ queryKey: ["module"], queryFn: () => service.getModule() });
+  const { data: modules } = useQuery({ queryKey: ["modules"], queryFn: () => service.getModules() });
   const { data: cohort } = useQuery({ queryKey: ["cohort"], queryFn: () => service.getCohort() });
   const { data: mis } = useQuery({ queryKey: ["mis"], queryFn: () => service.getMisconceptions() });
   const { data: esc } = useQuery({ queryKey: ["esc"], queryFn: () => service.getEscalations() });
@@ -36,29 +38,87 @@ function Dashboard() {
     qc.invalidateQueries({ queryKey: ["esc"] });
   };
 
-  const total = cohort ? Object.values(Object.values(cohort)[0] ?? {}).reduce((a, b) => a + b, 0) : 0;
+  // One module at a time, so topics from different modules never mix. Remembered in this browser.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setSelectedId(localStorage.getItem(SELECTED_KEY));
+    } catch {
+      /* storage unavailable: start on the first module */
+    }
+  }, []);
+  const select = (id: string) => {
+    setSelectedId(id);
+    try {
+      localStorage.setItem(SELECTED_KEY, id);
+    } catch {
+      /* not remembered, still works */
+    }
+  };
+  const module: Module | undefined = modules?.find((m) => m.id === selectedId) ?? modules?.[0];
+  const topicIds = new Set(module?.topics.map((t) => t.id) ?? []);
+  const topicTitles = new Set(module?.topics.map((t) => t.title) ?? []);
+  const moduleMis = mis?.filter((m) => topicTitles.has(m.topicTitle));
+  const moduleEsc = esc?.filter((e) => topicIds.has(e.topicId));
+
+  // Students in this module's cohort: the largest per-topic headcount.
+  const total = Math.max(0, ...(module?.topics ?? []).map((t) => Object.values(cohort?.[t.id] ?? {}).reduce((a, b) => a + b, 0)));
 
   return (
     <main className="mx-auto max-w-[1440px] px-6 py-10 md:px-10 md:py-14">
       <div className="mb-9 flex flex-wrap items-end justify-between gap-6 border-b pb-10">
         <div>
-          <p className="label-text text-muted-foreground">{module?.code} · Teacher</p>
+          <p className="label-text text-muted-foreground">{module?.code ? `${module.code} · ` : ""}Teacher</p>
           <h1 className="mt-4 text-5xl font-medium leading-none md:text-7xl">Cohort overview</h1>
         </div>
         <span className="inline-flex items-center gap-2.5 rounded-full bg-ink px-5 py-3 text-sm font-medium text-ink-foreground"><Users className="h-4 w-4 text-brand" /> {total} students</span>
       </div>
 
+      {modules && modules.length > 0 && (
+        <div className="mb-8">
+          <p id="module-picker-label" className="label-text mb-3 text-muted-foreground">Module</p>
+          <div role="radiogroup" aria-labelledby="module-picker-label" className="flex flex-wrap gap-2">
+            {modules.map((m) => {
+              const active = m.id === module?.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => select(m.id)}
+                  className={cn(
+                    "rounded-full border px-5 py-2.5 text-sm font-medium transition-colors",
+                    active ? "border-ink bg-ink text-ink-foreground" : "bg-background text-muted-foreground hover:border-foreground/35 hover:text-foreground",
+                  )}
+                >
+                  {m.title}
+                  <span className={cn("ml-2 text-xs", active ? "text-ink-foreground/60" : "text-muted-foreground/70")}>{m.topics.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid min-w-0 gap-5 lg:grid-cols-12">
         <section className="surface-panel min-w-0 p-6 md:p-8 lg:col-span-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <h2 className="text-2xl font-medium">Understanding by topic</h2>
+            <h2 className="text-2xl font-medium">Understanding by topic{module ? <span className="text-muted-foreground"> · {module.title}</span> : null}</h2>
             <StateLegend className="mb-7 w-full min-w-0 max-w-md justify-start sm:w-auto lg:justify-end" />
           </div>
           <div className="mt-7 divide-y border-y">
             {module?.topics.map((t, ti) => {
               const c = cohort?.[t.id];
-              if (!c) return null;
-              const sum = Object.values(c).reduce((a, b) => a + b, 0);
+              const sum = c ? Object.values(c).reduce((a, b) => a + b, 0) : 0;
+              if (!c || !sum) {
+                return (
+                  <div key={t.id} className="flex items-baseline justify-between gap-4 py-5 text-sm first:pt-1 last:pb-1">
+                    <span className="text-base font-semibold">{t.title}</span>
+                    <span className="shrink-0 text-xs font-medium text-muted-foreground">No sessions yet</span>
+                  </div>
+                );
+              }
               return (
                 <div key={t.id} className="py-5 first:pt-1 last:pb-1">
                   <div className="mb-3 flex items-baseline justify-between gap-4 text-sm">
@@ -85,8 +145,9 @@ function Dashboard() {
 
         <section className="surface-panel min-w-0 bg-ink p-6 text-ink-foreground md:p-8 lg:col-span-4">
           <h2 className="mb-6 flex items-center gap-2.5 text-2xl font-medium"><Lightbulb className="h-5 w-5 text-brand" /> Most common misconceptions</h2>
+          {moduleMis?.length === 0 && <p className="text-sm text-ink-foreground/60">None recorded for this module yet.</p>}
           <ul className="divide-y divide-ink-foreground/15">
-            {mis?.map((m) => (
+            {moduleMis?.map((m) => (
               <li key={m.text} className="py-5 first:pt-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-display text-5xl font-medium tracking-[-0.05em] text-brand">{m.percent}%</span>
@@ -102,8 +163,9 @@ function Dashboard() {
 
         <section className="surface-panel min-w-0 p-6 md:p-8 lg:col-span-12">
           <h2 className="mb-6 flex items-center gap-2.5 text-2xl font-medium"><AlertTriangle className="h-5 w-5 text-destructive" /> Escalations</h2>
+          {moduleEsc?.length === 0 && <p className="text-sm text-muted-foreground">No flagged sessions in this module.</p>}
           <div className="grid gap-4 md:grid-cols-2">
-            {esc?.map((e) => (
+            {moduleEsc?.map((e) => (
               <div key={e.id} className={cn("flex flex-col items-start justify-between gap-4 rounded-2xl border bg-background p-5 transition-all sm:flex-row", e.reviewed && "opacity-50")}>
                 <div>
                   <p className="text-lg font-semibold">{e.student}</p>
@@ -148,7 +210,7 @@ function Roster({ topics, students }: { topics: Topic[]; students: StudentOvervi
           </thead>
           <tbody>
             {students.map((st) => {
-              const scores = Object.values(st.topics).map((r) => r.score).filter((x): x is number => x !== null);
+              const scores = topics.map((t) => st.topics[t.id]?.score).filter((x): x is number => x != null);
               const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
               const isOpen = open === st.id;
               return (
@@ -156,12 +218,12 @@ function Roster({ topics, students }: { topics: Topic[]; students: StudentOvervi
                   <tr onClick={() => setOpen(isOpen ? null : st.id)} className={cn("cursor-pointer border-t transition-colors hover:bg-secondary/70", isOpen && "bg-secondary/70")}>
                     <td className="px-5 py-4 font-semibold">{st.name}</td>
                     {topics.map((t) => {
-                      const r = st.topics[t.id]!;
+                      const r = st.topics[t.id];
                       return (
                         <td key={t.id} className="px-3 py-4">
                           <span className="inline-flex items-center gap-2">
-                            <span className={cn("h-2.5 w-2.5 rounded-full", STATE_META[r.state].bg)} />
-                            <span className="text-muted-foreground">{r.score ?? "—"}</span>
+                            <span className={cn("h-2.5 w-2.5 rounded-full", STATE_META[r?.state ?? "not_covered"].bg)} />
+                            <span className="text-muted-foreground">{r?.score ?? "—"}</span>
                           </span>
                         </td>
                       );
@@ -175,7 +237,7 @@ function Roster({ topics, students }: { topics: Topic[]; students: StudentOvervi
                       <td colSpan={topics.length + 4} className="p-5">
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                           {topics.map((t) => {
-                            const r = st.topics[t.id]!;
+                            const r = st.topics[t.id] ?? { state: "not_covered" as const, score: null, attempts: 0, concepts: {} };
                             return (
                               <div key={t.id} className="animate-rise rounded-2xl border bg-card p-5">
                                 <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3">

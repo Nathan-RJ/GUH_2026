@@ -54,6 +54,7 @@ export type CohortCounts = Record<ConceptState, number>;
 
 export interface ExamResult {
   topicId: string;
+  topicTitle: string;
   score: number;
   concepts: Concept[];
 }
@@ -108,7 +109,10 @@ export interface StudentOverview {
 }
 
 export interface Reply2MeService {
+  /** The demo module behind the lecturer dashboard's seeded data. */
   getModule(): Promise<Module>;
+  /** Every module a student can teach, each with its own topics. */
+  getModules(): Promise<Module[]>;
   processDocument(doc: DocumentUpload, onUploaded?: () => void): Promise<DocumentResult>;
   /** The signed-in student's own progress only. */
   getMyProgress(): Promise<Record<string, TopicRecord>>;
@@ -118,7 +122,7 @@ export interface Reply2MeService {
   getMisconceptions(): Promise<Misconception[]>;
   getEscalations(): Promise<Escalation[]>;
   markReviewed(id: string): Promise<void>;
-  startSession(topicId: string): TeachingSession;
+  startSession(topic: Topic): TeachingSession;
   getDemoScript(topicId: string): string[];
   getLastResult(): ExamResult | null;
 }

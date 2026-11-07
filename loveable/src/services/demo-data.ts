@@ -1,12 +1,13 @@
 import type { CohortCounts, ConceptState, Escalation, Misconception, Module } from "./types";
 
-export const DEMO_MODULE: Module = {
-  id: "intro-prog",
-  title: "Introduction to Programming",
-  code: "CS101",
+// A real lesson from the n8n Prepare Lesson workflow, in its own module.
+export const BUBBLE_SORT_MODULE: Module = {
+  id: "bubble-sort",
+  title: "Bubble Sort",
+  code: "",
   topics: [
     {
-      // A real lesson from the n8n Prepare Lesson workflow: marked live by Mark Session.
+      // Marked live by Mark Session.
       // Concept ids are its rubric's criterion ids.
       id: "bubble-sort",
       title: "Bubble sort",
@@ -19,6 +20,14 @@ export const DEMO_MODULE: Module = {
         { id: "stopping_conditions", label: "Stopping" },
       ],
     },
+  ],
+};
+
+export const DEMO_MODULE: Module = {
+  id: "intro-prog",
+  title: "Introduction to Programming",
+  code: "CS101",
+  topics: [
     {
       id: "recursion",
       title: "Recursion",
@@ -160,3 +169,6 @@ export const SEED_STUDENT_NAMES = [
   "Priya Shah", "Tom Okafor", "Amelia Hughes", "Oliver Bennett", "Zara Ahmed", "Jack Murphy",
   "Isla Campbell", "Noah Williams", "Freya Patel", "Harry Evans", "Sofia Rossi", "Leo Thompson",
 ];
+
+/** Modules students can always teach; lecturer uploads are added after these (services/modules.ts). */
+export const FIXED_MODULES: Module[] = [BUBBLE_SORT_MODULE, DEMO_MODULE];
