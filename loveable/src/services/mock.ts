@@ -23,6 +23,7 @@ import type {
   TopicRecord,
   TeachingSession,
 } from "./types";
+import { applyMarking, markTranscript, type MarkingResult, type TranscriptEntry } from "./marking";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let idCounter = 0;
@@ -127,9 +128,17 @@ class MockSession implements TeachingSession {
   private fixedBeliefs = new Set<string>();
   private turn = 0;
   private closed = false;
+  // Live marking (topics with a lessonId): the whole transcript is marked by n8n after each message.
+  private lessonId: string | undefined;
+  private transcript: TranscriptEntry[] = [];
+  private markSeq = 0; // latest marking request sent
+  private appliedSeq = 0; // latest marking result applied
+  private lastMark: MarkingResult | null = null;
+  private pendingMark: Promise<void> = Promise.resolve();
 
   constructor(private topicId: string) {
     const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
+    this.lessonId = topic.lessonId;
     this.concepts = topic.concepts.map((c) => ({ ...c, state: "not_covered" as ConceptState }));
     setTimeout(() => {
       this.emit({ type: "graph_update", concepts: this.concepts });
@@ -149,7 +158,29 @@ class MockSession implements TeachingSession {
 
   private reply(text: string) {
     const message: ChatMessage = { id: nextId("m"), from: "sam", text };
+    this.transcript.push({ speaker: "assistant", text });
     this.emit({ type: "ai_reply", message });
+  }
+
+  /** Mark the whole transcript so far; apply the result unless a newer one has landed. */
+  private markLive() {
+    if (!this.lessonId) return;
+    const seq = ++this.markSeq;
+    const transcript = this.transcript.map((t) => ({ ...t }));
+    this.emit({ type: "marking", status: "started" });
+    this.pendingMark = markTranscript(this.lessonId, transcript)
+      .then((result) => {
+        if (seq < this.appliedSeq) return; // an answer to a newer transcript is already shown
+        this.appliedSeq = seq;
+        this.lastMark = result;
+        this.concepts = applyMarking(this.concepts, result);
+        this.emit({ type: "graph_update", concepts: this.concepts.map((c) => ({ ...c })) });
+        this.emit({ type: "marking", status: "done", score: result.score });
+      })
+      .catch((err: unknown) => {
+        if (seq !== this.markSeq) return; // a newer request is on its way
+        this.emit({ type: "marking", status: "failed", error: err instanceof Error ? err.message : String(err) });
+      });
   }
 
   private setMode(m: SamMode) {
@@ -164,6 +195,8 @@ class MockSession implements TeachingSession {
     if (!trimmed) return;
     this.turn++;
     this.emit({ type: "student_message", message: { id: nextId("m"), from: "student", text: trimmed } });
+    this.transcript.push({ speaker: "user", text: trimmed });
+    this.markLive();
     const lower = trimmed.toLowerCase();
     await wait(700);
 
@@ -177,7 +210,8 @@ class MockSession implements TeachingSession {
     const changes: { c: Concept; from: ConceptState }[] = [];
     let wrongHit: string | null = null;
 
-    for (const c of this.concepts) {
+    // Keyword grading is only for demo topics; real lessons are marked by n8n (markLive).
+    for (const c of this.lessonId ? [] : this.concepts) {
       const rubric = RUBRIC[c.id] ?? genericRubric(c.label);
       const wrong = (rubric as Partial<RubricEntry>).wrong?.find((w) => w.pattern.test(trimmed));
       if (wrong) {
@@ -277,9 +311,10 @@ class MockSession implements TeachingSession {
     this.setMode("exam");
     this.reply("Right, wish me luck — I'm sitting the exam now!");
     await wait(600);
+    await this.pendingMark; // real lessons: use the latest live marking
     const result: ExamResult = {
       topicId: this.topicId,
-      score: scoreConcepts(this.concepts),
+      score: this.lastMark ? Math.round(this.lastMark.score) : scoreConcepts(this.concepts),
       concepts: this.concepts.map((c) => ({ ...c, note: c.note ?? "Not covered in your session." })),
     };
     state.lastResult = result;

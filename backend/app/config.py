@@ -21,3 +21,11 @@ class Config:
     # With no key, the AI student falls back to placeholder replies.
     OPENAI_API_KEY = os.environ.get("OPEN_API")
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+
+    # n8n "Mark Session" workflow (POST /api/mark forwards transcripts to it).
+    MARK_SESSION_URL = (
+        os.environ.get("MARK_SESSION_URL")
+        or "https://likeclockwork.app.n8n.cloud/webhook/reply2me/mark-session"
+    )
+    # Nickname saved with live-marked sessions, so the leaderboard can leave them out.
+    MARK_SESSION_NICKNAME = os.environ.get("MARK_SESSION_NICKNAME") or "live-marking"

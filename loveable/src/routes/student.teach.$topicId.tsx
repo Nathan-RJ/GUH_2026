@@ -49,6 +49,8 @@ function TeachPage() {
   const [youLine, setYouLine] = useState("");
   const [typeOpen, setTypeOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  // Live marking (real lessons only): how many checks are running, and the latest score.
+  const [marking, setMarking] = useState<{ running: number; score: number | null }>({ running: 0, score: null });
   const sessionRef = useRef<TeachingSession | null>(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -107,6 +109,13 @@ function TeachPage() {
           break;
         case "exam_result":
           setTimeout(() => navigate({ to: "/student/results" }), 400);
+          break;
+        case "marking":
+          setMarking((m) => ({
+            running: Math.max(0, m.running + (e.status === "started" ? 1 : -1)),
+            score: e.status === "done" && e.score !== undefined ? e.score : m.score,
+          }));
+          if (e.status === "failed") toast.error("Couldn't mark your explanation", { description: e.error });
           break;
       }
     });
@@ -214,7 +223,14 @@ function TeachPage() {
         <section className="surface-panel flex min-h-[620px] flex-col p-6 md:p-8">
           <div className="flex items-center justify-between gap-4 border-b pb-5">
             <h2 className="text-2xl font-medium">Live concept map</h2>
-            <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground">{concepts.filter((c) => c.state === "correct").length}/{concepts.length} strong</span>
+            <div className="flex items-center gap-2">
+              {topic.lessonId && (marking.running > 0 || marking.score !== null) && (
+                <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground" aria-live="polite">
+                  {marking.running > 0 ? "Marking…" : `Score ${Math.round(marking.score ?? 0)}`}
+                </span>
+              )}
+              <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground">{concepts.filter((c) => c.state === "correct").length}/{concepts.length} strong</span>
+            </div>
           </div>
           <div className="min-h-0 flex-1 py-2"><ConceptMap title={topic.title} concepts={concepts} /></div>
           <StateLegend className="justify-center border-t pt-5" />

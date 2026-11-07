@@ -16,6 +16,9 @@ export interface Topic {
   title: string;
   summary: string;
   concepts: { id: string; label: string }[];
+  /** A real lesson (n8n/Supabase). When set, the session is marked live by the
+   *  Mark Session workflow and concept ids are the rubric's criterion ids. */
+  lessonId?: string;
 }
 
 export interface Module {
@@ -63,7 +66,8 @@ export type SessionEvent =
   | { type: "mode_change"; mode: SamMode }
   | { type: "guardrail_block"; message: string }
   | { type: "escalation"; reason: string }
-  | { type: "exam_result"; result: ExamResult };
+  | { type: "exam_result"; result: ExamResult }
+  | { type: "marking"; status: "started" | "done" | "failed"; score?: number; error?: string };
 
 export interface TeachingSession {
   subscribe(cb: (e: SessionEvent) => void): () => void;

@@ -6,6 +6,20 @@ export const DEMO_MODULE: Module = {
   code: "CS101",
   topics: [
     {
+      // A real lesson from the n8n Prepare Lesson workflow: marked live by Mark Session.
+      // Concept ids are its rubric's criterion ids.
+      id: "bubble-sort",
+      title: "Bubble sort",
+      summary: "Sorting a list by comparing neighbours, swapping, and repeating passes.",
+      lessonId: "b0454456-7c09-4401-a544-373e3bbc2f10",
+      concepts: [
+        { id: "adjacent_comparisons", label: "Comparisons" },
+        { id: "conditional_swaps", label: "Swaps" },
+        { id: "repeated_passes", label: "Repeated passes" },
+        { id: "stopping_conditions", label: "Stopping" },
+      ],
+    },
+    {
       id: "recursion",
       title: "Recursion",
       summary: "Functions that solve a problem by calling themselves on smaller inputs.",
