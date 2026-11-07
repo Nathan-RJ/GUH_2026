@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { attachmentUrl, getSession, sendMessage } from "../api";
 import type { Session as SessionData } from "../types";
 import { formatBytes } from "../utils";
+import { AutoSpeak, MicButton, SpeakButton } from "../voice";
 
 export default function Session() {
   const { id } = useParams<{ id: string }>();
@@ -23,19 +24,25 @@ export default function Session() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.messages.length]);
 
-  async function handleSend(e: FormEvent) {
-    e.preventDefault();
-    if (!id || !text.trim()) return;
+  // Used by both the text box and the microphone. Returns true if it sent.
+  async function send(message: string): Promise<boolean> {
+    if (!id || !message.trim()) return false;
     setSending(true);
     setError(null);
     try {
-      setSession(await sendMessage(id, text));
-      setText("");
+      setSession(await sendMessage(id, message));
+      return true;
     } catch (err) {
       setError((err as Error).message);
+      return false;
     } finally {
       setSending(false);
     }
+  }
+
+  async function handleSend(e: FormEvent) {
+    e.preventDefault();
+    if (await send(text)) setText("");
   }
 
   if (error && !session) {
@@ -82,6 +89,7 @@ export default function Session() {
           {session.messages.map((m, i) => (
             <div key={i} className={`message ${m.role}`}>
               {m.text}
+              {m.role === "assistant" && <SpeakButton text={m.text} />}
             </div>
           ))}
           <div ref={bottomRef} />
@@ -90,6 +98,8 @@ export default function Session() {
         {error && <p className="error">{error}</p>}
 
         <form onSubmit={handleSend} className="composer">
+          <AutoSpeak messages={session.messages} />
+          <MicButton onTranscript={send} disabled={sending} />
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
