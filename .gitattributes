@@ -1,0 +1,4 @@
+# The Lovable app uses Linux line endings (LF) everywhere: its dev server writes
+# routeTree.gen.ts with LF and prettier expects LF. Without this, Windows checkouts
+# get CRLF and routeTree.gen.ts shows as "modified" every time the dev server runs.
+loveable/** text=auto eol=lf
