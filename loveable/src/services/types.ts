@@ -19,6 +19,8 @@ export interface Topic {
   /** A real lesson (n8n/Supabase). When set, the session is marked live by the
    *  Mark Session workflow and concept ids are the rubric's criterion ids. */
   lessonId?: string;
+  /** The module it belongs to: the title the lecturer gave the upload. */
+  module?: string;
 }
 
 export interface Module {
@@ -54,6 +56,7 @@ export type CohortCounts = Record<ConceptState, number>;
 
 export interface ExamResult {
   topicId: string;
+  topicTitle: string;
   score: number;
   concepts: Concept[];
 }
@@ -108,8 +111,12 @@ export interface StudentOverview {
 }
 
 export interface Reply2MeService {
+  /** The demo module behind the lecturer dashboard's seeded data. */
   getModule(): Promise<Module>;
+  /** The uploaded lessons as one flat catalogue (n8n Get Lesson via GET /api/lessons). */
   getStudentModule(): Promise<Module>;
+  /** Every module, each with its own topics: uploads grouped by title, plus the demo module. */
+  getModules(): Promise<Module[]>;
   processDocument(doc: DocumentUpload, onUploaded?: () => void): Promise<DocumentResult>;
   /** The signed-in student's own progress only. */
   getMyProgress(): Promise<Record<string, TopicRecord>>;
@@ -119,7 +126,7 @@ export interface Reply2MeService {
   getMisconceptions(): Promise<Misconception[]>;
   getEscalations(): Promise<Escalation[]>;
   markReviewed(id: string): Promise<void>;
-  startSession(topicId: string): TeachingSession;
+  startSession(topic: Topic): TeachingSession;
   getDemoScript(topicId: string): string[];
   getLastResult(): ExamResult | null;
 }

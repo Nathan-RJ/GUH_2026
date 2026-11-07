@@ -1,8 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Mic, MicOff, Volume2, VolumeX, Flag, Keyboard, Send } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { service, type Concept, type SamMode, type TeachingSession, type Topic } from "@/services";
 import { ConceptMap } from "@/components/ConceptMap";
 import { StateLegend } from "@/components/StateLegend";
@@ -38,16 +38,36 @@ const MODE_META: Record<SamMode, { label: string; dot: string }> = {
 
 function TeachPage() {
   const { topicId } = Route.useParams();
+  // Lessons come from the database catalogue (services/lessons.ts).
   const { data, isPending, error, refetch } = useQuery({ queryKey: ["student-lessons"], queryFn: () => service.getStudentModule(), retry: 1 });
-  if (isPending) return <main className="p-10">Loading lesson…</main>;
-  if (error) return <main className="p-10"><p role="alert">{error.message}</p><Button onClick={() => void refetch()}>Try again</Button></main>;
-  const topic = data?.topics.find(t => t.id === topicId);
-  if (!topic) return <main className="p-10">This lesson is no longer available. Return to the student lesson list.</main>;
+  if (isPending) return <main className="mx-auto max-w-[1440px] px-6 py-24 text-center text-muted-foreground">Loading lesson…</main>;
+  if (error) {
+    return (
+      <main className="mx-auto grid min-h-[calc(100vh-80px)] max-w-xl place-items-center px-6 py-24 text-center">
+        <div>
+          <p role="alert" className="text-destructive">{error.message}</p>
+          <Button className="mt-7" onClick={() => void refetch()}>Try again</Button>
+        </div>
+      </main>
+    );
+  }
+  const topic = data?.topics.find((t) => t.id === topicId);
+  if (!topic) {
+    return (
+      <main className="mx-auto grid min-h-[calc(100vh-80px)] max-w-xl place-items-center px-6 py-24 text-center">
+        <div>
+          <h1 className="text-4xl font-medium">Lesson not found</h1>
+          <p className="mt-3 text-muted-foreground">This lesson is no longer available.</p>
+          <Button asChild className="mt-7"><Link to="/student">Choose a lesson</Link></Button>
+        </div>
+      </main>
+    );
+  }
   return <TeachSession key={topic.id} topic={topic} />;
 }
 
 function TeachSession({ topic }: { topic: Topic }) {
-  const { topicId } = Route.useParams();
+  const topicId = topic.id;
   const navigate = useNavigate();
   const [concepts, setConcepts] = useState<Concept[]>(topic.concepts.map((c) => ({ ...c, state: "not_covered" })));
   const [mode, setMode] = useState<SamMode>("curious");
@@ -81,7 +101,7 @@ function TeachSession({ topic }: { topic: Topic }) {
   voiceRef.current = voice;
 
   useEffect(() => {
-    const s = service.startSession(topic.id);
+    const s = service.startSession(topic);
     sessionRef.current = s;
     let fakeTimer: ReturnType<typeof setTimeout>;
     const unsub = s.subscribe((e) => {
@@ -134,7 +154,7 @@ function TeachSession({ topic }: { topic: Topic }) {
       s.close();
       voiceRef.current.stop();
     };
-  }, [topic.id, navigate]);
+  }, [topic, navigate]);
 
   const mic = voice;
   const speaker: BlobSpeaker = mic.listening ? "you" : thinking ? "thinking" : aiSpeaking ? "ai" : "idle";

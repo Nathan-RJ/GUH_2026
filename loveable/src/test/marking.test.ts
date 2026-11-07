@@ -1,6 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyMarking, bandToState, type CriterionResult, type MarkingResult } from "@/services/marking";
 import { service, type Concept, type SessionEvent } from "@/services";
+import { DEMO_MODULE } from "@/services/demo-data";
+import type { Topic } from "@/services/types";
+
+// A real lesson (marked live) and the demo topics (keyword graded).
+const BUBBLE_SORT: Topic = {
+  id: "b0454456-7c09-4401-a544-373e3bbc2f10",
+  lessonId: "b0454456-7c09-4401-a544-373e3bbc2f10",
+  module: "Bubble Sort",
+  title: "Bubble sort",
+  summary: "",
+  concepts: [
+    { id: "adjacent_comparisons", label: "Comparisons" },
+    { id: "conditional_swaps", label: "Swaps" },
+    { id: "repeated_passes", label: "Repeated passes" },
+    { id: "stopping_conditions", label: "Stopping" },
+  ],
+};
+const topic = (id: string): Topic => (id === "bubble-sort" ? BUBBLE_SORT : DEMO_MODULE.topics.find((t) => t.id === id)!);
 
 const criterion = (id: string, band: CriterionResult["band"], evidence = 0): CriterionResult => ({
   criterion_id: id,
@@ -50,7 +68,7 @@ describe("live marking in a lesson session", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const s = service.startSession("bubble-sort");
+    const s = service.startSession(topic("bubble-sort"));
     const events: SessionEvent[] = [];
     s.subscribe((e) => events.push(e));
     await s.sendMessage("Compare adjacent elements from left to right.");
@@ -85,7 +103,7 @@ describe("live marking in a lesson session", () => {
       .mockImplementationOnce(async () => new Response(JSON.stringify(result(100, [criterion("adjacent_comparisons", "full", 1)]))));
     vi.stubGlobal("fetch", fetchMock);
 
-    const s = service.startSession("bubble-sort");
+    const s = service.startSession(topic("bubble-sort"));
     const events: SessionEvent[] = [];
     s.subscribe((e) => events.push(e));
     await s.sendMessage("first");
@@ -101,7 +119,7 @@ describe("live marking in a lesson session", () => {
 
   it("reports a failure without breaking the session", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "n8n is down" }), { status: 502 })));
-    const s = service.startSession("bubble-sort");
+    const s = service.startSession(topic("bubble-sort"));
     const events: SessionEvent[] = [];
     s.subscribe((e) => events.push(e));
     await s.sendMessage("Compare neighbours.");
@@ -114,7 +132,7 @@ describe("live marking in a lesson session", () => {
   it("does not call the marker for demo topics", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const s = service.startSession("recursion");
+    const s = service.startSession(topic("recursion"));
     await s.sendMessage("Recursion is a function calling itself.");
     expect(fetchMock).not.toHaveBeenCalled();
     s.close();

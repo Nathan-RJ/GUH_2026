@@ -20,9 +20,9 @@ import type {
   SamMode,
   SessionEvent,
   StudentOverview,
+  Topic,
   TopicRecord,
   TeachingSession,
-  Topic,
 } from "./types";
 import { applyMarking, markTranscript, type MarkingResult, type TranscriptEntry } from "./marking";
 
@@ -137,8 +137,10 @@ class MockSession implements TeachingSession {
   private lastMark: MarkingResult | null = null;
   private pendingMark: Promise<void> = Promise.resolve();
 
-  constructor(private topicId: string, private topic: Topic = DEMO_MODULE.topics.find((t) => t.id === topicId)!) {
-    if (!topic) throw new Error("Lesson not loaded. Return to the lesson list and try again.");
+  private topicId: string;
+
+  constructor(private topic: Topic) {
+    this.topicId = topic.id;
     this.lessonId = topic.lessonId;
     this.concepts = topic.concepts.map((c) => ({ ...c, state: "not_covered" as ConceptState }));
     setTimeout(() => {
@@ -323,6 +325,7 @@ class MockSession implements TeachingSession {
     await this.pendingMark; // real lessons: use the latest live marking
     const result: ExamResult = {
       topicId: this.topicId,
+      topicTitle: this.topic.title,
       score: this.lastMark ? Math.round(this.lastMark.score) : scoreConcepts(this.concepts),
       concepts: this.concepts.map((c) => ({ ...c, note: c.note ?? "Not covered in your session." })),
     };
@@ -349,6 +352,9 @@ export const mockService: Reply2MeService = {
   async getModule() {
     return DEMO_MODULE;
   },
+  async getModules() {
+    return [DEMO_MODULE];
+  },
   async processDocument() {
     throw new Error("Document uploads require the real upload service.");
   },
@@ -371,8 +377,8 @@ export const mockService: Reply2MeService = {
     const e = state.escalations.find((x) => x.id === id);
     if (e) e.reviewed = true;
   },
-  startSession(topicId) {
-    return new MockSession(topicId);
+  startSession(topic) {
+    return new MockSession(topic);
   },
   getDemoScript(topicId) {
     return (
@@ -388,5 +394,5 @@ export const mockService: Reply2MeService = {
 };
 
 export function createLessonSession(topic: Topic): TeachingSession {
-  return new MockSession(topic.id, topic);
+  return new MockSession(topic);
 }

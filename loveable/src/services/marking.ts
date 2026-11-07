@@ -49,10 +49,18 @@ export function bandToState(c: CriterionResult): ConceptState {
   return c.evidence?.length ? "very_wrong" : "not_covered";
 }
 
-/** The topic's concepts updated from a marking result (matched by criterion_id). */
+/**
+ * The topic's concepts updated from a marking result (matched by criterion_id).
+ * Criteria without a card yet (e.g. a freshly uploaded lesson) get one added.
+ */
 export function applyMarking(concepts: Concept[], result: MarkingResult): Concept[] {
-  const byId = new Map((result.feedback?.criteria ?? []).map((c) => [c.criterion_id, c]));
-  return concepts.map((concept) => {
+  const criteria = result.feedback?.criteria ?? [];
+  const byId = new Map(criteria.map((c) => [c.criterion_id, c]));
+  const known = new Set(concepts.map((c) => c.id));
+  const added: Concept[] = criteria
+    .filter((c) => !known.has(c.criterion_id))
+    .map((c) => ({ id: c.criterion_id, label: c.title, state: "not_covered" }));
+  return [...concepts, ...added].map((concept) => {
     const c = byId.get(concept.id);
     if (!c) return concept;
     const updated: Concept = { ...concept, state: bandToState(c) };

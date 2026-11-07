@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PencilLine, RotateCcw, LayoutGrid } from "lucide-react";
-import { DEMO_MODULE } from "@/services/demo-data";
-import { service, getCachedLesson, type ConceptState, type ExamResult } from "@/services";
+import { service, type ConceptState, type ExamResult } from "@/services";
 import { ConceptMap } from "@/components/ConceptMap";
 import { StateLegend } from "@/components/StateLegend";
 import { STATE_META } from "@/lib/states";
@@ -64,7 +63,7 @@ function Results() {
     );
   }
   if (!result) return null;
-  const topic = getCachedLesson(result.topicId) ?? DEMO_MODULE.topics.find((t) => t.id === result.topicId) ?? { id: result.topicId, title: "Your lesson" };
+  const topic = { id: result.topicId, title: result.topicTitle };
 
   if (phase === "exam") {
     return (

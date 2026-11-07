@@ -16,7 +16,8 @@ export async function getStudentModule(): Promise<Module> {
     if (typeof lesson["lesson_id"] !== "string" || !lesson["lesson_id"] || typeof lesson["title"] !== "string" || !brief || typeof brief !== "object") throw new Error("Invalid lesson in catalogue.");
     const objectives = Array.isArray(brief["learning_objectives"]) ? brief["learning_objectives"].filter((value): value is string => typeof value === "string") : [];
     return {
-      id: lesson["lesson_id"], lessonId: lesson["lesson_id"], title: lesson["title"],
+      id: lesson["lesson_id"], lessonId: lesson["lesson_id"], module: lesson["title"],
+      title: typeof brief["topic"] === "string" && brief["topic"].trim() ? brief["topic"] : lesson["title"],
       summary: typeof brief["summary"] === "string" ? brief["summary"] : "",
       concepts: objectives.map((label, index) => ({ id: `objective-${index}`, label })),
     };
