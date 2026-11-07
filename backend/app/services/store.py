@@ -10,16 +10,17 @@ A session looks like:
   "attachments": [{"name", "original_name", "size", "content_type"}],
   "messages": [{"role": "user" | "assistant", "text", "created_at"}],
   "turns": [StudentTurn.to_dict(), ...],   # backend only, see agents/student.py
-  "misconception_count": 3,                # backend only: the difficulty knob
-  "misconception_bank": [{"id", "text"}],  # backend only: all possible misconceptions
-  "student_misconceptions": [...],         # backend only: the ones the student was given
+  "student_settings": {"course_knowledge": 0.3, "misconception_count": 3},  # backend only
+  "knowledge": [...],                      # backend only: the student's knowledge bank,
+                                           #   see agents/knowledge.py
   "created_at": "ISO timestamp"
 }
 
 "messages" is what the webpage shows. "turns" is one record per explanation
 (the explanation, the student's reply and its status) for the teacher agent to
-consume. The misconception fields say what the student was set up to get
-wrong. All backend-only fields are left out of API responses by public_view().
+consume. "knowledge" is everything the student knows (including its
+misconceptions) and grows each turn. All backend-only fields are left out of
+API responses by public_view().
 """
 
 import uuid
@@ -27,8 +28,8 @@ from datetime import datetime, timezone
 
 _sessions: dict[str, dict] = {}
 
-# Never sent to the webpage (the student must not reveal its misconceptions).
-BACKEND_ONLY = {"turns", "misconception_count", "misconception_bank", "student_misconceptions"}
+# Never sent to the webpage (the student must not reveal what it knows or gets wrong).
+BACKEND_ONLY = {"turns", "student_settings", "knowledge"}
 
 
 def _now() -> str:
@@ -46,9 +47,8 @@ def create_session(session_id: str, prompt: str, attachments: list[dict]) -> dic
         "attachments": attachments,
         "messages": [],
         "turns": [],
-        "misconception_count": 0,
-        "misconception_bank": [],
-        "student_misconceptions": [],
+        "student_settings": {"course_knowledge": 0.0, "misconception_count": 0},
+        "knowledge": [],
         "created_at": _now(),
     }
     _sessions[session_id] = session
@@ -65,11 +65,10 @@ def add_message(session_id: str, role: str, text: str) -> dict:
     return message
 
 
-def set_misconceptions(session_id: str, *, count: int, bank: list[dict], chosen: list[dict]) -> None:
+def set_student_setup(session_id: str, *, settings: dict, knowledge: list[dict]) -> None:
     session = _sessions[session_id]
-    session["misconception_count"] = count
-    session["misconception_bank"] = bank
-    session["student_misconceptions"] = chosen
+    session["student_settings"] = settings
+    session["knowledge"] = knowledge
 
 
 def add_turn(session_id: str, turn: dict) -> dict:

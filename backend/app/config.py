@@ -27,3 +27,6 @@ class Config:
     # is just new to the topic, higher = harder to teach. A session can override
     # it (POST /api/sessions `misconception_count`).
     STUDENT_MISCONCEPTIONS = int(os.environ.get("STUDENT_MISCONCEPTIONS") or "3")
+    # Share of the current course's content the student already knows, 0-1
+    # (0 = none of it). A session can override it (`course_knowledge`).
+    STUDENT_COURSE_KNOWLEDGE = float(os.environ.get("STUDENT_COURSE_KNOWLEDGE") or "0")
