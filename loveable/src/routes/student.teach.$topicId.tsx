@@ -1,0 +1,236 @@
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { Mic, MicOff, Volume2, VolumeX, Flag, Keyboard, Send } from "lucide-react";
+import { DEMO_MODULE } from "@/services/demo-data";
+import { service, type Concept, type SamMode, type TeachingSession } from "@/services";
+import { ConceptMap } from "@/components/ConceptMap";
+import { StateLegend } from "@/components/StateLegend";
+import { VoiceOrb, type OrbSpeaker } from "@/components/VoiceOrb";
+import { Eyebrow } from "@/components/Eyebrow";
+import { Button } from "@/components/ui/button";
+import { useSpeechRecognition, useMicLevel, speak, stopSpeaking } from "@/hooks/use-speech";
+import { cn } from "@/lib/utils";
+import { STATE_META } from "@/lib/states";
+
+export const Route = createFileRoute("/student/teach/$topicId")({
+  head: ({ params }) => {
+    const t = DEMO_MODULE.topics.find((x) => x.id === params.topicId)?.title ?? "a topic";
+    return {
+      meta: [
+        { title: `Teach ${t} — Reply 2 Me` },
+        { name: "description", content: `Explain ${t} out loud to an AI student and watch the concept map light up.` },
+        { property: "og:title", content: `Teach ${t} — Reply 2 Me` },
+        { property: "og:description", content: `Explain ${t} out loud to an AI student.` },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary" },
+      ],
+    };
+  },
+  component: TeachPage,
+});
+
+const MODE_META: Record<SamMode, { label: string; dot: string }> = {
+  curious: { label: "Curious", dot: "bg-brand" },
+  stubborn: { label: "Stubborn", dot: "bg-state-very-wrong" },
+  challenge: { label: "Challenge", dot: "bg-warning" },
+  exam: { label: "Exam", dot: "bg-ink-foreground" },
+};
+
+function TeachPage() {
+  const { topicId } = Route.useParams();
+  const navigate = useNavigate();
+  const topic = DEMO_MODULE.topics.find((t) => t.id === topicId) ?? DEMO_MODULE.topics[0]!;
+  const [concepts, setConcepts] = useState<Concept[]>(topic.concepts.map((c) => ({ ...c, state: "not_covered" })));
+  const [mode, setMode] = useState<SamMode>("curious");
+  const [muted, setMuted] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [aiLine, setAiLine] = useState("");
+  const [youLine, setYouLine] = useState("");
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [aiLevel, setAiLevel] = useState(0);
+  const sessionRef = useRef<TeachingSession | null>(null);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const bump = useRef(0);
+
+  // Animate the circle while the AI student talks; word boundaries add a kick.
+  useEffect(() => {
+    if (!aiSpeaking) {
+      setAiLevel(0);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (t: number) => {
+      const e = (t - start) / 1000;
+      bump.current *= 0.9;
+      const base = 0.25 + 0.25 * Math.abs(Math.sin(e * 7.3)) * (0.6 + 0.4 * Math.sin(e * 2.1));
+      setAiLevel(Math.min(1, base + bump.current));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [aiSpeaking]);
+
+  useEffect(() => {
+    const s = service.startSession(topic.id);
+    sessionRef.current = s;
+    let fakeTimer: ReturnType<typeof setTimeout>;
+    const unsub = s.subscribe((e) => {
+      switch (e.type) {
+        case "student_message":
+          setYouLine(e.message.text);
+          setThinking(true);
+          break;
+        case "ai_reply": {
+          setThinking(false);
+          setAiLine(e.message.text);
+          setYouLine("");
+          const end = () => setAiSpeaking(false);
+          setAiSpeaking(true);
+          if (!mutedRef.current && "speechSynthesis" in window) {
+            speak(e.message.text, { onBoundary: () => (bump.current = 0.45), onEnd: end });
+          } else {
+            clearTimeout(fakeTimer);
+            fakeTimer = setTimeout(end, Math.min(6000, e.message.text.length * 50));
+          }
+          break;
+        }
+        case "graph_update":
+          setConcepts(e.concepts);
+          break;
+        case "mode_change":
+          setMode(e.mode);
+          break;
+        case "guardrail_block":
+          toast.warning(e.message);
+          break;
+        case "escalation":
+          toast.error("This session has been flagged for your teacher to review", { description: e.reason });
+          break;
+        case "exam_result":
+          setTimeout(() => navigate({ to: "/student/results" }), 400);
+          break;
+      }
+    });
+    return () => {
+      clearTimeout(fakeTimer);
+      unsub();
+      s.close();
+      stopSpeaking();
+    };
+  }, [topic.id, navigate]);
+
+  const send = (text: string) => {
+    if (!text.trim()) return;
+    stopSpeaking();
+    setAiSpeaking(false);
+    sessionRef.current?.sendMessage(text);
+    setDraft("");
+  };
+  const mic = useSpeechRecognition(send);
+  const micLevel = useMicLevel(mic.listening);
+
+  const speaker: OrbSpeaker = mic.listening ? "you" : thinking ? "thinking" : aiSpeaking ? "ai" : "idle";
+  const level = mic.listening ? micLevel : aiSpeaking ? aiLevel : 0;
+  const caption = mic.listening ? mic.interim || "Listening…" : speaker === "you" || thinking ? youLine : aiLine;
+  const captionWho = speaker === "you" || thinking ? "You" : "Your student";
+
+  return (
+    <main className="mx-auto max-w-[1600px] px-6 py-8 md:px-10 md:py-10">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-5 border-b pb-7">
+        <div>
+          <Eyebrow dot="bg-brand" className="text-muted-foreground">Teaching session</Eyebrow>
+          <h1 className="mt-3 text-4xl font-medium leading-none md:text-6xl">{topic.title}</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" size="icon" className="h-12 w-12" onClick={() => { setMuted(!muted); stopSpeaking(); }} aria-label={muted ? "Unmute" : "Mute"}>
+            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+          </Button>
+          <Button size="lg" onClick={() => sessionRef.current?.finish()}>
+            <Flag className="h-4 w-4" /> Finish and test
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2.5" aria-label="Subtopics">
+        {concepts.map((c) => (
+          <span
+            key={c.id}
+            title={STATE_META[c.state].label}
+            className="rounded-full border px-4 py-2 text-xs font-semibold text-foreground shadow-sm transition-all duration-700"
+            style={{ backgroundColor: c.state === "not_covered" ? "var(--card)" : `color-mix(in oklab, ${STATE_META[c.state].fill} ${c.state === "correct" ? 90 : 45}%, var(--card))`, borderColor: STATE_META[c.state].fill }}
+          >
+            {c.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <section className="relative flex min-h-[620px] flex-col items-center overflow-hidden rounded-[24px] border border-ink bg-ink p-6 text-ink-foreground shadow-card md:p-8">
+          <div className="flex w-full items-center justify-between gap-4">
+            <Eyebrow dot={MODE_META[mode].dot}>{MODE_META[mode].label}</Eyebrow>
+            <span className="text-right text-xs text-ink-foreground/50">{speaker === "you" ? (mic.wrappingUp ? "Paused — finishing your turn…" : "You're talking") : speaker === "ai" ? "Your student is talking" : speaker === "thinking" ? "Thinking…" : "Tap the mic and start teaching"}</span>
+          </div>
+
+          <div className="flex flex-1 items-center justify-center">
+            <VoiceOrb level={level} speaker={speaker} />
+          </div>
+
+          <div className="mb-7 min-h-[104px] w-full max-w-xl text-center">
+            {caption && (
+              <>
+                <p className="label-text mb-3 text-ink-foreground/40">{captionWho}</p>
+                <p key={caption} className={cn("animate-rise text-xl font-medium leading-snug tracking-[-0.02em]", captionWho === "You" && "text-ink-foreground/60")}>{caption}</p>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={mic.toggle}
+              disabled={!mic.supported}
+              aria-label={mic.listening ? "Stop talking" : "Start talking"}
+              title={mic.supported ? undefined : "Speech recognition isn't supported in this browser — try Chrome or Edge"}
+              className={cn(
+                "relative grid h-20 w-20 place-items-center rounded-full transition-all duration-300 disabled:opacity-40",
+                mic.listening ? "scale-110 bg-brand text-brand-foreground" : "bg-card text-card-foreground hover:scale-105",
+                mic.wrappingUp && "ring-4 ring-brand/35",
+              )}
+            >
+              {mic.listening && <span className="animate-mic-wave absolute inset-0 rounded-full bg-brand" />}
+              {mic.listening ? <MicOff className="relative h-7 w-7" /> : <Mic className="relative h-7 w-7" />}
+            </button>
+            <Button variant="ghost" size="icon" className="h-12 w-12 text-ink-foreground/60 hover:bg-ink-foreground/10 hover:text-ink-foreground" onClick={() => setTypeOpen(!typeOpen)} aria-label="Type instead">
+              <Keyboard className="h-5 w-5" />
+            </Button>
+          </div>
+          {typeOpen && (
+            <form className="mt-5 flex w-full max-w-xl gap-2" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Type your explanation…"
+                className="h-12 flex-1 rounded-full border border-ink-foreground/20 bg-ink-foreground/10 px-5 text-ink-foreground outline-none placeholder:text-ink-foreground/35 focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+              <Button type="submit" size="icon" className="h-12 w-12 bg-brand text-brand-foreground" aria-label="Send"><Send className="h-4 w-4" /></Button>
+            </form>
+          )}
+        </section>
+
+        <section className="surface-panel flex min-h-[620px] flex-col p-6 md:p-8">
+          <div className="flex items-center justify-between gap-4 border-b pb-5">
+            <h2 className="text-2xl font-medium">Live concept map</h2>
+            <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground">{concepts.filter((c) => c.state === "correct").length}/{concepts.length} strong</span>
+          </div>
+          <div className="min-h-0 flex-1 py-2"><ConceptMap title={topic.title} concepts={concepts} /></div>
+          <StateLegend className="justify-center border-t pt-5" />
+        </section>
+      </div>
+    </main>
+  );
+}
