@@ -1,88 +1,74 @@
-"""The student's knowledge bank: everything the student "knows".
+"""The student's knowledge bank: everything the student "knows" (and doesn't).
 
-The student may only reason from this bank. It's built when a session
-starts and grows as the user teaches:
+The student may only reason from this bank. It's built from whatever the
+caller provides (how much is provided is the difficulty, decided upstream),
+and grows as the user teaches:
 
-    source        kind            what it is
-    ------------  --------------  ----------------------------------------------
-    prerequisite  fact            earlier courses' content (e.g. COURSE1 for
-                                  COURSE2); the student is confident about it
-    course        fact            a random share of the current course's content
-                                  (0 = knows none of it, 1 = knows all of it)
-    course        misconception   a random selection from the misconception bank:
-                                  things it wrongly believes about the course
-    taught        fact            what it learned from the user, turn by turn
+    source        kind            what it is                         from
+    ------------  --------------  ---------------------------------  ---------------------------
+    prerequisite  fact            earlier courses; known confidently  `prerequisites`
+    course        fact            parts of this course it already     `known_content`
+                                  knows (often none)
+    course        misconception   things it wrongly believes          agent_brief.misconceptions
+    course        gap             things it explicitly doesn't know   agent_brief.knowledge_gaps
+    taught        fact            what it learned from the user       each turn's `learned`
 
 An entry looks like:
-    {"id": "k3", "text": "...", "source": "course", "kind": "fact", ...}
+    {"id": "p3", "text": "...", "source": "prerequisite", "kind": "fact", ...}
 plus `turn` for taught entries, and any extra keys from the input data.
 
-The input formats (prerequisites, course content, misconception bank) aren't
-decided yet. `normalize` accepts plain strings or dicts; adapt it when the
-real formats are known.
+`prerequisites` and `known_content` accept lesson rows (their key points are
+used, never the rubric), student_brief-like objects, plain strings, or dicts
+with the text under a common key. See lesson.content_points and normalize.
 
-Nothing here calls the AI or saves anything: the student agent reads and
-extends the bank, and the store keeps it on the session (session["knowledge"]).
+Nothing here calls the AI or saves anything.
 """
 
-import random
+from . import lesson as lesson_data
 
-# Keys we'll accept as an item's text until the real formats are decided.
-_TEXT_KEYS = ("text", "fact", "belief", "misconception", "content", "description", "statement", "name")
+# Keys we'll accept as an item's text.
+_TEXT_KEYS = ("text", "fact", "point", "belief", "misconception", "gap", "content", "description", "statement", "name")
 
 
 def normalize(raw, id_prefix: str) -> list[dict]:
     """Turn a list in any reasonable shape into [{"id": ..., "text": ..., <other keys kept>}].
 
-    Accepts strings, or dicts with the text under one of _TEXT_KEYS. Items
+    Each item may be a string, a dict with the text under one of _TEXT_KEYS,
+    or a lesson row / student_brief (expanded into its key points). Items
     without usable text are dropped. Missing ids become "<prefix>1", "<prefix>2"...
     """
+    if raw is None:
+        return []
+    raw = lesson_data._decode(raw)
+    if not isinstance(raw, list):
+        raw = [raw]
+
     result = []
-    for index, item in enumerate(raw or [], start=1):
-        if isinstance(item, str):
-            item = {"text": item}
-        if not isinstance(item, dict):
-            continue
-        text = next((str(item[k]).strip() for k in _TEXT_KEYS if item.get(k)), "")
-        if not text:
-            continue
-        result.append({**item, "id": str(item.get("id") or f"{id_prefix}{index}"), "text": text})
+    for item in raw:
+        for point in lesson_data.content_points(item):
+            if isinstance(point, str):
+                point = {"text": point}
+            text = next((str(point[k]).strip() for k in _TEXT_KEYS if point.get(k)), "")
+            if text:
+                result.append({**point, "id": str(point.get("id") or f"{id_prefix}{len(result) + 1}"), "text": text})
     return result
 
 
-def pick(items: list[dict], count: int, rng: random.Random | None = None) -> list[dict]:
-    """`count` items at random, no repeats (fewer if there aren't enough)."""
-    count = max(0, min(int(count), len(items)))
-    return (rng or random).sample(items, count)
+def build(*, agent_brief=None, prerequisites=None, known_content=None) -> list[dict]:
+    """The student's starting knowledge bank, from exactly what it's given.
 
-
-def build(
-    *,
-    prerequisites=None,
-    course_content=None,
-    course_knowledge: float = 0.0,
-    misconceptions=None,
-    misconception_count: int = 0,
-    rng: random.Random | None = None,
-) -> list[dict]:
-    """The student's starting knowledge bank.
-
-    prerequisites        all of it is known, confidently
-    course_content       a random `course_knowledge` share (0-1) of it is known
-    misconceptions       the misconception bank; `misconception_count` are believed
+    agent_brief     an AgentBrief (or anything lesson.parse_agent_brief accepts):
+                    its misconceptions and knowledge_gaps are used
+    prerequisites   earlier courses' content: known confidently
+    known_content   parts of the current course it already knows
     """
-    rng = rng or random
-    course = normalize(course_content, "c")
+    if not isinstance(agent_brief, lesson_data.AgentBrief):
+        agent_brief = lesson_data.parse_agent_brief(agent_brief)
     bank = []
-    bank += [{**item, "source": "prerequisite", "kind": "fact"} for item in normalize(prerequisites, "p")]
-    bank += [
-        {**item, "source": "course", "kind": "fact"}
-        for item in pick(course, round(len(course) * course_knowledge), rng)
-    ]
-    bank += [
-        {**item, "source": "course", "kind": "misconception"}
-        for item in pick(normalize(misconceptions, "m"), misconception_count, rng)
-    ]
+    bank += [{**i, "source": "prerequisite", "kind": "fact"} for i in normalize(prerequisites, "p")]
+    bank += [{**i, "source": "course", "kind": "fact"} for i in normalize(known_content, "c")]
+    bank += [{**i, "source": "course", "kind": "misconception"} for i in normalize(agent_brief.misconceptions, "m")]
+    bank += [{**i, "source": "course", "kind": "gap"} for i in normalize(agent_brief.knowledge_gaps, "g")]
     return bank
 
 
@@ -94,12 +80,12 @@ def _key(text: str) -> str:
 def add_taught(bank: list[dict], texts: list[str], turn: int) -> list[dict]:
     """Record what the student learned from the user this turn. Returns the new entries.
 
-    Statements already in the bank (from any source) are skipped.
+    Statements already in the bank as facts are skipped.
     """
-    seen = {_key(k["text"]) for k in bank}
+    seen = {_key(k["text"]) for k in bank if k["kind"] == "fact"}
     taught_so_far = sum(1 for k in bank if k["source"] == "taught")
     new = []
-    for text in texts:
+    for text in texts or []:
         if not isinstance(text, str) or not text.strip() or _key(text) in seen:
             continue
         seen.add(_key(text))
@@ -118,15 +104,16 @@ def misconceptions(bank: list[dict]) -> list[dict]:
 def describe(bank: list[dict]) -> str:
     """The bank as prompt text for the student."""
     sections = [
-        ("prerequisite", "fact", "From earlier courses (you're confident about these)"),
-        ("course", "fact", "About this course (you already know these)"),
+        ("prerequisite", "fact", "From earlier courses (you know these well and are confident about them)"),
+        ("course", "fact", "About this topic (you already know these)"),
+        ("taught", "fact", "Learned from your tutor in this session (you know these now)"),
         ("course", "misconception",
-         "About this course (you sincerely believe these; they're wrong but you don't know that)"),
-        ("taught", "fact", "Learned from your tutor in this session"),
+         "About this topic (you believe these, but you're not sure; they're wrong, though you don't know that)"),
+        ("course", "gap", "About this topic (you DON'T know these yet; this is what you need to be taught)"),
     ]
     parts = []
     for source, kind, heading in sections:
         items = [k["text"] for k in bank if k["source"] == source and k["kind"] == kind]
         if items:
             parts.append(heading + ":\n" + "\n".join(f"- {text}" for text in items))
-    return "\n\n".join(parts) or "(nothing yet: you're completely new to this topic)"
+    return "\n\n".join(parts) or "(nothing: you're completely new to this subject)"

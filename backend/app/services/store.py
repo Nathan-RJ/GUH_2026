@@ -9,8 +9,8 @@ A session looks like:
   "prompt": "what the user typed on the home page",
   "attachments": [{"name", "original_name", "size", "content_type"}],
   "messages": [{"role": "user" | "assistant", "text", "created_at"}],
-  "turns": [StudentTurn.to_dict(), ...],   # backend only, see agents/student.py
-  "student_settings": {"course_knowledge": 0.3, "misconception_count": 3},  # backend only
+  "turns": [{"session_id", "number", "explanation", "reply", "learned", "status", "created_at"}],
+  "brief": AgentBrief.to_dict(),           # backend only: from the lesson's agent_brief
   "knowledge": [...],                      # backend only: the student's knowledge bank,
                                            #   see agents/knowledge.py
   "created_at": "ISO timestamp"
@@ -29,10 +29,10 @@ from datetime import datetime, timezone
 _sessions: dict[str, dict] = {}
 
 # Never sent to the webpage (the student must not reveal what it knows or gets wrong).
-BACKEND_ONLY = {"turns", "student_settings", "knowledge"}
+BACKEND_ONLY = {"turns", "brief", "knowledge"}
 
 
-def _now() -> str:
+def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -47,9 +47,9 @@ def create_session(session_id: str, prompt: str, attachments: list[dict]) -> dic
         "attachments": attachments,
         "messages": [],
         "turns": [],
-        "student_settings": {"course_knowledge": 0.0, "misconception_count": 0},
+        "brief": {},
         "knowledge": [],
-        "created_at": _now(),
+        "created_at": now(),
     }
     _sessions[session_id] = session
     return session
@@ -60,14 +60,14 @@ def get_session(session_id: str) -> dict | None:
 
 
 def add_message(session_id: str, role: str, text: str) -> dict:
-    message = {"role": role, "text": text, "created_at": _now()}
+    message = {"role": role, "text": text, "created_at": now()}
     _sessions[session_id]["messages"].append(message)
     return message
 
 
-def set_student_setup(session_id: str, *, settings: dict, knowledge: list[dict]) -> None:
+def set_student_setup(session_id: str, *, brief: dict, knowledge: list[dict]) -> None:
     session = _sessions[session_id]
-    session["student_settings"] = settings
+    session["brief"] = brief
     session["knowledge"] = knowledge
 
 

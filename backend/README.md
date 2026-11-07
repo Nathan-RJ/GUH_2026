@@ -16,7 +16,7 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 | Method | Path | What it does |
 |---|---|---|
 | GET  | `/api/health` | `{"status": "ok"}` |
-| POST | `/api/sessions` | multipart form: `prompt` + any number of `files`, plus the optional knowledge-bank fields below -> new session |
+| POST | `/api/sessions` | multipart form: `prompt` + any number of `files`, plus optional `lesson`, `prerequisites`, `known_content` (JSON) -> new session |
 | GET  | `/api/sessions/<id>` | the session (prompt, attachments, messages) |
 | POST | `/api/sessions/<id>/messages` | `{"text": "..."}` (the user's explanation) -> updated session with the student's reply |
 | GET  | `/api/sessions/<id>/attachments/<name>` | download an uploaded file |
@@ -26,31 +26,43 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 - `app/routes/sessions.py`  the endpoints above
 - `app/services/store.py`   in-memory session storage (swap for a database later)
 - `app/services/files.py`   saves uploads
-- `app/agents/student.py`   the AI student the user teaches; `respond` returns a `StudentTurn` (reply + what it learned), stored in `session["turns"]` (backend only) for the teacher
+- `app/agents/student.py`   the AI student (see below)
+- `app/agents/lesson.py`    reads n8n lesson rows (agent_brief, key points)
 - `app/agents/knowledge.py` the student's knowledge bank
-- `app/services/student_inputs.py` reads the knowledge-bank inputs (placeholder sources)
+- `app/services/student_inputs.py` reads the student's inputs for the session endpoints
 - `app/agents/teacher.py`   reviews turns (not wired into the routes yet)
 - `app/agents/llm.py`       shared OpenAI client; reads uploaded .txt/.pdf etc. as hidden course material
 
-## The student's knowledge bank
+## The student agent
 
-Everything the student knows is in its knowledge bank (`app/agents/knowledge.py`),
-stored on the session but never sent to the webpage. The student is told to treat
-anything outside it as unknown.
+Self-contained: data in, reply out (`app/agents/`). No Flask, storage or file
+reading inside it; the caller keeps the conversation and knowledge bank.
 
-| Source | What | Controlled by |
-|---|---|---|
-| prerequisite | earlier courses' content; known confidently | `prerequisites` |
-| course | a random share of the current course's content | `course_content` + `course_knowledge` (0-1, default `STUDENT_COURSE_KNOWLEDGE`=0) |
-| course (misconception) | random picks from the misconception bank; wrongly believed | `misconceptions` + `misconception_count` (0-20, default `STUDENT_MISCONCEPTIONS`=3) |
-| taught | what it learned from the user, added after every turn | the conversation |
+```python
+from app.agents import knowledge, lesson, student
 
-All of these are optional `POST /api/sessions` form fields (lists are JSON). They're
-**placeholder sources** until the real parsed content exists: swap them in
-`app/services/student_inputs.py`, and adapt the formats in `knowledge.normalize()`
-(it accepts strings, or objects with a `text`/`fact`/`belief`/`description` field).
+brief = lesson.parse_agent_brief(lesson_row)          # uses ONLY agent_brief
+bank = knowledge.build(agent_brief=brief, prerequisites=prereq_rows, known_content=[])
+first = student.opening(brief, bank)                   # the lesson's opening_line
+reply = student.respond(brief, bank, transcript, "You compare neighbouring elements.")
+knowledge.add_taught(bank, reply.learned, turn=1)      # reply.reply, reply.learned, reply.status
+```
 
-With no misconception bank, the student invents `misconception_count` misconceptions itself.
+- **Lesson** (`lesson.py`): reads rows from the n8n Prepare Lesson workflow. For the
+  lesson being taught only `agent_brief` is used (persona, opening line, misconceptions,
+  knowledge gaps, behaviour rules, questions). `source_text`, `student_brief` and
+  `rubric` hold the answers and are never given to the student.
+- **Knowledge bank** (`knowledge.py`): exactly what's passed in. Prerequisites (lesson
+  rows' key points, or strings) are known confidently; `known_content` is what it already
+  knows of this course; misconceptions and gaps come from `agent_brief`; what it's taught
+  is added each turn. How much is passed in is the difficulty, decided upstream.
+- The student is told it knows its knowledge bank and nothing else. The model can't
+  truly forget, so this is strong instruction, not a guarantee.
+- `transcript` accepts our messages (`role`) or the n8n format (`speaker`).
+
+The session endpoints are a thin wrapper for running it locally: `POST /api/sessions`
+takes optional JSON form fields `lesson`, `prerequisites` and `known_content`
+(`app/services/student_inputs.py`).
 
 ## AI setup
 

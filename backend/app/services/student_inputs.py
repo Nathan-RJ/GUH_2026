@@ -1,25 +1,19 @@
 """What the student starts with, read from a new session's request.
 
-PLACEHOLDER SOURCES: the real prerequisite knowledge, course content and
-misconception bank will come from elsewhere (parsed from the lecturer's
-uploads). Until then they can be passed to POST /api/sessions as optional
-JSON-list form fields. When the real sources exist, change `read()` to load
-them; the formats are normalised in agents/knowledge.py `normalize`.
+The real data comes from the n8n workflows (lesson rows in Supabase). Here it
+can be passed to POST /api/sessions as optional JSON form fields, so the
+student can be run and tested on its own. How much is passed in is the
+difficulty; nothing here picks or trims.
 
-Form fields (all optional):
-    prerequisites        JSON list: knowledge from earlier courses
-    course_content       JSON list: the current course's content
-    course_knowledge     0-1: share of course_content the student already knows
-                         (default STUDENT_COURSE_KNOWLEDGE)
-    misconceptions       JSON list: the misconception bank
-    misconception_count  0-20: how many misconceptions the student believes
-                         (default STUDENT_MISCONCEPTIONS)
+Form fields (all optional, JSON):
+    lesson         the lesson being taught: a lesson row (or [row], as Supabase
+                   returns it) or just its agent_brief. Only agent_brief is used.
+    prerequisites  list: earlier courses' content (lesson rows, key points, strings)
+    known_content  list: parts of this course the student already knows
 """
 
 import json
 from dataclasses import dataclass, field
-
-MAX_MISCONCEPTION_COUNT = 20
 
 
 class InputError(ValueError):
@@ -28,51 +22,30 @@ class InputError(ValueError):
 
 @dataclass
 class StudentInputs:
+    lesson: object = None
     prerequisites: list = field(default_factory=list)
-    course_content: list = field(default_factory=list)
-    course_knowledge: float = 0.0
-    misconceptions: list = field(default_factory=list)
-    misconception_count: int = 0
+    known_content: list = field(default_factory=list)
 
 
-def _json_list(form, name: str) -> list:
+def _json(form, name: str, *, expect_list: bool):
     raw = form.get(name)
     if not raw:
-        return []
+        return [] if expect_list else None
     try:
         value = json.loads(raw)
     except json.JSONDecodeError:
-        value = None
-    if not isinstance(value, list):
+        raise InputError(f"{name} must be valid JSON.") from None
+    if expect_list and not isinstance(value, list):
         raise InputError(f"{name} must be a JSON list.")
+    if not expect_list and not isinstance(value, (dict, list)):
+        raise InputError(f"{name} must be a JSON object (a lesson row or agent_brief).")
     return value
 
 
-def _number(form, name: str, default, cast, low, high, description: str):
-    raw = form.get(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = cast(raw)
-    except ValueError:
-        value = None
-    if value is None or not low <= value <= high:
-        raise InputError(f"{name} must be {description}.")
-    return value
-
-
-def read(form, config) -> StudentInputs:
+def read(form) -> StudentInputs:
     """Read the student's inputs from a request form. Raises InputError."""
     return StudentInputs(
-        prerequisites=_json_list(form, "prerequisites"),
-        course_content=_json_list(form, "course_content"),
-        course_knowledge=_number(
-            form, "course_knowledge", config["STUDENT_COURSE_KNOWLEDGE"], float, 0.0, 1.0,
-            "a number from 0 to 1",
-        ),
-        misconceptions=_json_list(form, "misconceptions"),
-        misconception_count=_number(
-            form, "misconception_count", config["STUDENT_MISCONCEPTIONS"], int, 0, MAX_MISCONCEPTION_COUNT,
-            f"a whole number from 0 to {MAX_MISCONCEPTION_COUNT}",
-        ),
+        lesson=_json(form, "lesson", expect_list=False),
+        prerequisites=_json(form, "prerequisites", expect_list=True),
+        known_content=_json(form, "known_content", expect_list=True),
     )
