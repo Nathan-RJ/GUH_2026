@@ -3,14 +3,37 @@
 It only knows what the user tells it, asks naive follow-up questions, and
 holds onto its misconceptions until they are properly explained away.
 
-    opening(session)            -> str   first message when a session starts
-    respond(session, explanation) -> str  reply to the user's explanation
+    opening(session)              -> str          first message when a session starts
+    respond(session, explanation) -> StudentTurn  reply to the user's explanation
 
 Neither function saves anything: the caller (routes/sessions.py) stores the
-messages. `session["messages"]` is the history *before* this turn.
+messages and the turn. `session["messages"]` is the history *before* this turn.
+
+A StudentTurn is the hand-off for the (future) teacher agent: everything it
+needs to review one turn, alongside the session's topic, material and history.
 """
 
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from typing import Literal
+
 from . import llm
+
+# ok: a real AI reply | placeholder: AI not configured | failed: the AI request errored
+TurnStatus = Literal["ok", "placeholder", "failed"]
+
+
+@dataclass
+class StudentTurn:
+    session_id: str
+    number: int  # 1 for the user's first explanation, 2 for the next...
+    explanation: str  # what the user taught
+    reply: str  # what the student said back (shown on the webpage)
+    status: TurnStatus  # only "ok" turns are worth reviewing
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 SYSTEM_PROMPT = """\
 You are Sam, a keen but confused university student. The user is your tutor
@@ -62,24 +85,33 @@ def _history(session: dict) -> list[dict]:
     return [{"role": m["role"], "content": m["text"]} for m in session["messages"]]
 
 
-def _ask(session: dict, latest: str) -> str | None:
+def _ask(session: dict, latest: str) -> tuple[str | None, TurnStatus]:
     messages = [{"role": "system", "content": _system_prompt(session)}]
     messages += _history(session)
     messages.append({"role": "user", "content": latest})
     try:
-        return llm.chat(messages, temperature=0.8, max_tokens=300)
+        text = llm.chat(messages, temperature=0.8, max_tokens=300)
     except llm.AIError:
-        return FAILED_REPLY
+        return FAILED_REPLY, "failed"
+    return (text, "ok") if text is not None else (None, "placeholder")
 
 
 def opening(session: dict) -> str:
     """The student's first message when a session starts."""
-    return _ask(session, OPENING_INSTRUCTION) or (
+    text, _ = _ask(session, OPENING_INSTRUCTION)
+    return text or (
         "Hi! I'm ready to learn. (Placeholder reply: set OPENAI_API_KEY in "
         "backend/.env to connect the AI student.)"
     )
 
 
-def respond(session: dict, explanation: str) -> str:
-    """The student's reply to the user's latest explanation."""
-    return _ask(session, explanation) or f"(Placeholder student reply) You said: {explanation}"
+def respond(session: dict, explanation: str) -> StudentTurn:
+    """The student's reply to the user's latest explanation, as a StudentTurn."""
+    text, status = _ask(session, explanation)
+    return StudentTurn(
+        session_id=session["id"],
+        number=sum(1 for m in session["messages"] if m["role"] == "user") + 1,
+        explanation=explanation,
+        reply=text or f"(Placeholder student reply) You said: {explanation}",
+        status=status,
+    )
