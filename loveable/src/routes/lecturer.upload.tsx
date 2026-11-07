@@ -1,149 +1,112 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { BookOpen, CheckCircle2, FileText, Loader2, Lock, ScrollText, UploadCloud, ArrowRight } from "lucide-react";
-import { service, type DocKind, type UploadedDoc } from "@/services";
+import { BookOpen, FileText, Loader2, Lock, ScrollText, UploadCloud } from "lucide-react";
+import { service, type DocKind, type DocumentResult } from "@/services";
+import { DOCUMENT_ACCEPT, validateDocument } from "@/services/upload";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/lecturer/upload")({
-  head: () => ({
-    meta: [
-      { title: "Upload module documents — Reply 2 Me" },
-      { name: "description", content: "Upload module content, past exam papers and your marking rubric." },
-      { property: "og:title", content: "Upload module documents — Reply 2 Me" },
-      { property: "og:description", content: "Turn your module documents into teachable topics." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "Upload module content - Reply 2 Me" }] }),
   component: UploadPage,
 });
 
-const ZONES: { kind: DocKind; title: string; hint: string; icon: typeof BookOpen; secret?: boolean }[] = [
-  { kind: "content", title: "Module content", hint: "Slides, lecture notes", icon: BookOpen },
-  { kind: "exams", title: "Past exam papers", hint: "Previous years' papers", icon: ScrollText, secret: true },
-  { kind: "rubric", title: "Marking rubric", hint: "Criteria and mark schemes", icon: FileText, secret: true },
-];
-const ACCEPT = ".pdf,.pptx,.docx,.txt";
+const ZONES = [
+  { kind: "content", title: "Module content", icon: BookOpen },
+  { kind: "exams", title: "Past exam papers", icon: ScrollText },
+  { kind: "rubric", title: "Marking rubric", icon: FileText },
+] as const;
 
-type Item = UploadedDoc & { status: "processing" | "ready" };
+type Item = { id: string; name: string; state: "uploading" | "processing" | "draft" | "unconfirmed" | "error"; message?: string; result?: DocumentResult };
 
-function UploadPage() {
+export function UploadPage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const { data: module } = useQuery({ queryKey: ["module"], queryFn: () => service.getModule() });
+  const busy = items.some((item) => item.state === "uploading" || item.state === "processing");
 
-  const add = (files: File[], kind: DocKind) => {
-    const valid = files.filter((f) => /\.(pdf|pptx|docx|txt)$/i.test(f.name));
-    valid.forEach((f) => {
-      const doc: Item = { id: `${f.name}-${Date.now()}-${Math.random()}`, name: f.name, kind, size: f.size, status: "processing" };
-      setItems((x) => [...x, doc]);
-      service.processDocument(doc).then(() => setItems((x) => x.map((i) => (i.id === doc.id ? { ...i, status: "ready" } : i))));
-    });
+  const select = (files: File[]) => {
+    if (busy) return;
+    if (files.length !== 1) { setError("Choose exactly one document at a time."); setFile(null); return; }
+    const chosen = files[0]!;
+    const suggested = chosen.name.replace(/\.[^.]+$/, "").slice(0, 200);
+    const issue = validateDocument({ file: chosen, title: suggested, kind: "content" });
+    setError(issue);
+    setFile(issue ? null : chosen);
+    if (!issue) setTitle(suggested);
   };
 
-  const loadSample = () => {
-    const sample: [string, DocKind][] = [
-      ["Week 6 – Recursion.pptx", "content"],
-      ["CS101 Lecture Notes.pdf", "content"],
-      ["CS101 Exam 2024.pdf", "exams"],
-      ["CS101 Marking Rubric.docx", "rubric"],
-    ];
-    sample.forEach(([n, k]) => add([new File(["demo"], n)], k));
+  const upload = async () => {
+    if (!file || busy) return;
+    const doc = { file, title, kind: "content" as DocKind };
+    const issue = validateDocument(doc);
+    if (issue) { setError(issue); return; }
+    setError(null);
+    const id = crypto.randomUUID();
+    const update = (patch: Partial<Item>) => setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setItems((current) => [...current, { id, name: file.name, state: "uploading" }]);
+    try {
+      const result = await service.processDocument(doc, () => update({ state: "processing" }));
+      update({ state: result.status, result });
+      setFile(null);
+      setTitle("");
+    } catch (cause) {
+      update({ state: "error", message: cause instanceof Error ? cause.message : "Upload failed. Check n8n executions before retrying." });
+    }
   };
-
-  const contentReady = items.some((i) => i.kind === "content" && i.status === "ready");
 
   return (
     <main className="mx-auto max-w-[1440px] px-6 py-10 md:px-10 md:py-14">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-6 border-b pb-10">
-        <div className="max-w-3xl">
-          <p className="label-text text-muted-foreground">{module?.code ?? "CS101"} · Teacher</p>
-          <h1 className="mt-4 text-4xl font-medium leading-[1.02] md:text-6xl">{module?.title ?? "Introduction to Programming"}</h1>
-          <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">Drop your documents in. We'll turn them into topics your students can teach.</p>
-        </div>
-        <Button variant="outline" onClick={loadSample}>Load sample documents</Button>
+      <div className="mb-8 border-b pb-10">
+        <p className="label-text text-muted-foreground">Teacher</p>
+        <h1 className="mt-4 text-4xl font-medium md:text-6xl">Upload module content</h1>
+        <p className="mt-5 text-muted-foreground">Upload one PDF, TXT or MD document, up to 10 MB. A generated lesson is saved as a draft for review.</p>
       </div>
-
-      <div className="mb-8 flex items-center gap-4 rounded-2xl bg-ink px-5 py-4 text-ink-foreground md:px-6">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground"><Lock className="h-4 w-4" /></span>
-        <p className="text-sm font-medium md:text-base">Exam papers and rubric are never shown to students.</p>
+      <div className="mb-8 flex items-center gap-4 rounded-2xl bg-ink px-5 py-4 text-ink-foreground">
+        <Lock className="h-5 w-5 shrink-0" />
+        <p>Exam and rubric uploads are disabled until separate private handling is available. Do not upload them as module content.</p>
       </div>
-
       <div className="grid gap-5 md:grid-cols-3">
-        {ZONES.map((z) => (
-          <DropZone key={z.kind} zone={z} items={items.filter((i) => i.kind === z.kind)} onFiles={(f) => add(f, z.kind)} />
-        ))}
+        {ZONES.map((zone) => <DropZone key={zone.kind} zone={zone} disabled={zone.kind !== "content" || busy} onFiles={select} />)}
       </div>
-
-      {contentReady && module && (
-        <section className="animate-rise mt-16 border-t pt-10">
-          <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="text-3xl font-medium md:text-4xl">Generated topics</h2>
-              <p className="mt-2 text-muted-foreground">{module.topics.length} topics extracted from your module content.</p>
-            </div>
-            <Button asChild>
-              <Link to="/lecturer/dashboard">View dashboard <ArrowRight className="h-4 w-4" /></Link>
-            </Button>
-          </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            {module.topics.map((t, i) => (
-              <div key={t.id} className="surface-panel animate-rise p-6 md:p-7" style={{ animationDelay: `${i * 90}ms` }}>
-                <h3 className="text-2xl font-medium">{t.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t.summary}</p>
-                <div className="mt-6 flex flex-wrap gap-2 border-t pt-5">
-                  {t.concepts.map((c) => (
-                    <span key={c.id} className="rounded-full border bg-secondary px-3 py-1.5 text-xs font-medium text-secondary-foreground">{c.label}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {file && <div className="surface-panel mt-6 space-y-4 p-6">
+        <p className="break-all">Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)</p>
+        <label className="block font-medium" htmlFor="lesson-title">Lesson title</label>
+        <input id="lesson-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} disabled={busy} className="w-full rounded-lg border bg-background p-3" />
+        <Button onClick={upload} disabled={busy || !title.trim()}>{busy ? "Please wait…" : "Upload and prepare lesson"}</Button>
+      </div>}
+      {error && <p role="alert" className="mt-4 text-destructive">{error}</p>}
+      <div aria-live="polite" className="mt-8 space-y-4">
+        {items.map((item) => <div key={item.id} className="surface-panel p-6">
+          <h2 className="break-all font-medium">{item.name}</h2>
+          {(item.state === "uploading" || item.state === "processing") && <p className="mt-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{item.state === "uploading" ? "Uploading document…" : "Document sent. Waiting for n8n to generate and save the lesson…"}</p>}
+          {item.result?.status === "draft" && <><p className="mt-2 text-state-correct">Lesson saved as a draft. Review it before using it with students.</p><p className="mt-2 break-all text-sm">Lesson ID: {item.result.lesson_id}</p><p className="mt-2 text-sm text-muted-foreground">The workflow returns a receipt, not extracted topics. The existing dashboard still uses demo data.</p></>}
+          {item.result?.status === "unconfirmed" && <p className="mt-2">Completion unconfirmed: {item.result.message}</p>}
+          {item.state === "error" && <p role="alert" className="mt-2 text-destructive">{item.message}</p>}
+        </div>)}
+      </div>
     </main>
   );
 }
 
-function DropZone({ zone, items, onFiles }: { zone: (typeof ZONES)[number]; items: Item[]; onFiles: (f: File[]) => void }) {
-  const [over, setOver] = useState(false);
+function DropZone({ zone, disabled, onFiles }: { zone: (typeof ZONES)[number]; disabled: boolean; onFiles: (files: File[]) => void }) {
   const input = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
   const Icon = zone.icon;
-  return (
-    <div className="flex flex-col gap-3">
-      <div
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); onFiles(Array.from(e.dataTransfer.files)); }}
-        onClick={() => input.current?.click()}
-        className={cn(
-          "group flex min-h-[320px] w-full cursor-pointer flex-col items-start rounded-[24px] border border-dashed bg-card p-7 text-left shadow-card transition-all duration-300",
-          over ? "-translate-y-1 border-brand bg-primary-soft" : "hover:-translate-y-1 hover:border-foreground/45 hover:shadow-lift",
-        )}
-      >
-        <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { onFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        <div className="mb-10 grid h-12 w-12 place-items-center rounded-full bg-secondary text-foreground transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><Icon className="h-5 w-5" /></div>
-        <h3 className="text-2xl font-medium">{zone.title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{zone.hint}</p>
-        <p className="mt-7 inline-flex items-center gap-2 text-sm font-semibold"><UploadCloud className="h-4 w-4" /> Drag files or click to browse</p>
-        <p className="mt-1 text-xs text-muted-foreground">PDF, PPTX, DOCX or TXT</p>
-        {zone.secret && <p className="mt-auto inline-flex items-center gap-1.5 pt-5 text-xs text-muted-foreground"><Lock className="h-3 w-3" /> Hidden from students</p>}
-      </div>
-      {items.map((i) => (
-        <div key={i.id} className="animate-rise relative overflow-hidden rounded-2xl border bg-card p-4 shadow-card">
-          {i.status === "processing" && <div className="animate-shimmer absolute inset-0" />}
-          <div className="relative flex items-center gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-secondary"><FileText className="h-4 w-4 text-muted-foreground" /></span>
-            <span className="flex-1 truncate text-sm font-medium">{i.name}</span>
-            {i.status === "processing" ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing</span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-state-correct"><CheckCircle2 className="h-4 w-4" /> Ready</span>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <div
+    onDragOver={(event) => { event.preventDefault(); if (!disabled) setOver(true); }}
+    onDragLeave={() => setOver(false)}
+    onDrop={(event) => { event.preventDefault(); setOver(false); if (!disabled) onFiles(Array.from(event.dataTransfer.files)); }}
+    className={cn("flex min-h-[280px] flex-col items-start rounded-[24px] border border-dashed bg-card p-7 shadow-card", disabled && "opacity-60", over && "border-brand bg-primary-soft")}
+  >
+    <Icon className="mb-8 h-6 w-6" />
+    <h2 className="text-2xl font-medium">{zone.title}</h2>
+    {zone.kind === "content" ? <>
+      <p className="mt-2 text-sm text-muted-foreground">PDF, TXT or MD · Maximum 10 MB · One file per upload</p>
+      <input ref={input} type="file" accept={DOCUMENT_ACCEPT} disabled={disabled} className="hidden" aria-label="Module content document" onChange={(event) => { if (event.target.files?.length) onFiles(Array.from(event.target.files)); event.target.value = ""; }} />
+      <Button variant="outline" disabled={disabled} className="mt-6" onClick={() => input.current?.click()}><UploadCloud className="h-4 w-4" />Choose document</Button>
+      <p className="mt-2 text-xs text-muted-foreground">Or drop a file here</p>
+    </> : <><p className="mt-4 text-sm">Unavailable: separate private handling is not implemented.</p><Button disabled variant="outline" className="mt-6"><Lock className="h-4 w-4" />Uploads disabled</Button></>}
+  </div>;
 }
