@@ -20,12 +20,14 @@ Runs on http://127.0.0.1:5000. Run the tests with `pytest`.
 | GET  | `/api/sessions/<id>` | the session (prompt, attachments, messages) |
 | POST | `/api/sessions/<id>/messages` | `{"text": "..."}` (the user's explanation) -> updated session with the student's reply |
 | GET  | `/api/sessions/<id>/attachments/<name>` | download an uploaded file |
+| POST | `/api/mark` | `{"lesson_id", "transcript": [{"speaker", "text"}]}` -> forwards to the n8n Mark Session workflow; returns `{session_id, score, feedback: {criteria: [...]}}`. Saves a session row in Supabase every call. |
 
 ## Files
 
 - `app/routes/sessions.py`  the endpoints above
 - `app/services/store.py`   in-memory session storage (swap for a database later)
 - `app/services/files.py`   saves uploads
+- `app/services/marking.py` calls the n8n Mark Session webhook (`MARK_SESSION_URL`)
 - `app/agents/student.py`   the AI student (see below)
 - `app/agents/lesson.py`    reads n8n lesson rows (agent_brief, key points)
 - `app/agents/knowledge.py` the student's knowledge bank
